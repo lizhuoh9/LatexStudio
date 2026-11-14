@@ -1,17 +1,21 @@
-# LatexStudio 0.3.0 — unsigned development release
+# LatexStudio {{VERSION}}
 
-## 本次版本
+## 下载安装
 
-- 用户可见品牌统一为 LatexStudio；内部历史应用标识和数据路径保留兼容，不清除论文、项目入口或登录记录。
-- 独立项目首页与单篇编辑工作台；源码工具、章节大纲、PDF 右侧历史、当前论文同步、可开关且不横跨左栏的日志。
-- 有效登录可用操作系统加密保留并在重启重新验证；到期／撤销仍需登录，不保存 refresh token。
-- 首页真实源文件／附件最后修改时间，按文件类型区分的原创矢量图标。
-- 软件更新独立于论文仓库授权，公开查询 lizhuoh9/LatexStudio 的正式版本。当前禁止自动下载、退出安装或绕过签名。
+| Windows | macOS · M 系列芯片 |
+| :---: | :---: |
+| [**Windows 64 位安装版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-win-x64-setup.exe) | [**Apple Silicon Mac 版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-mac-arm64-test.zip) |
 
-## 安装须知
+未签名开发版。Mac 版目前仅用于编辑测试，暂不支持本地 TeX 编译，未完成 Apple 公证。
 
-**这些是未签名开发产物，不是可信签名正式发行。** Windows 根据文件名选择 setup 或 portable；macOS ZIP 仅为相应架构的编辑测试版，使用 ad-hoc 签名，未公证、不支持本地 TeX。平台实测与签名门槛不能以构建成功代替。
+<details>
+<summary>版本说明与开发者资料</summary>
 
-更新前请保存所有草稿并正常关闭旧程序，勿删除应用数据或论文目录。应用“检查更新”会打开此仓库的官方下载页，由你手动下载安装；不会在编辑时强制重启。
+- 独立项目首页、论文编辑工作台、章节大纲和 PDF 右侧修改历史。
+- 当前论文同步、可开关日志，以及操作系统加密的有效登录会话。
+- 更新前请保存草稿并正常关闭旧软件，不要删除应用数据或论文目录。
+- 当前未签名版本只提示手动下载安装，不在编辑时强制更新或绕过系统校验。
+- Assets 中的其他文件用于更新元数据、校验、便携测试或对应源码；普通使用者无需下载它们。SHA256SUMS 仅用于完整性核对，不等于受信代码签名。
+- 对应源码及第三方许可随版本保留，源代码和原生依赖的再分发义务不因简化下载入口而取消。
 
-SHA256SUMS 用于下载完整性核对，不等于受信代码签名。应用对应源码随本版本提供，许可与原生依赖来源见源码中的第三方说明；不要仅分发二进制而丢弃对应源码。
+</details>
