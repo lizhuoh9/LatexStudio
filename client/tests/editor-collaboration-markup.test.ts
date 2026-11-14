@@ -1,0 +1,61 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+const html = readFileSync(resolve('src/renderer/index.html'), 'utf8')
+const main = readFileSync(resolve('src/renderer/main.ts'), 'utf8')
+const panel = readFileSync(resolve('src/renderer/collaboration-panel.ts'), 'utf8')
+const model = readFileSync(resolve('src/renderer/collaboration-model.ts'), 'utf8')
+const start = html.indexOf('<div class="collaboration-card"')
+const developer = html.indexOf('<details id="developer-sync"')
+const ordinary = html.slice(start, developer)
+
+describe('ordinary collaboration account UI stays separate from project authority', () => {
+  it('has no manual credential, repository URL, arbitrary link or remote frame in the normal flow', () => {
+    expect(start).toBeGreaterThan(0); expect(developer).toBeGreaterThan(start)
+    expect(ordinary).not.toMatch(/<(?:input|iframe)\b|href\s*=/i)
+    expect(ordinary).not.toContain('id="github-token"'); expect(ordinary).not.toContain('id="github-url"')
+    expect(html).toContain("connect-src 'none'"); expect(html).toContain("frame-src 'none'")
+  })
+  it('keeps account/session details collapsed and project authority separate from sign-in', () => {
+    expect(ordinary).toContain('id="cloud-project-workspace"')
+    const detail = ordinary.indexOf('<details id="collaboration-account-details"')
+    expect(detail).toBeGreaterThan(0)
+    expect(ordinary.slice(detail, ordinary.indexOf('>', detail))).not.toContain(' open')
+    const accountDetails = ordinary.slice(detail, ordinary.indexOf('</details>', detail))
+    expect(accountDetails).toContain('操作系统加密保存'); expect(accountDetails).toContain('系统安全存储不可用时仅本次运行有效')
+    expect(accountDetails).toContain('授权到期后需重新登录')
+    expect(accountDetails).toContain('退出账号会移除本机保存的登录，不撤销 GitHub 授权'); expect(accountDetails).toContain('仓库访问范围在项目授权中管理')
+    expect(ordinary).toContain('id="collaboration-error" class="collaboration-error" role="alert" hidden')
+    expect(panel).toContain("state.phase === 'unconfigured'")
+    expect(ordinary).not.toMatch(/id="collaboration-(?:download|share|sync|import)"/)
+  })
+  it('shows the required code and copy action while keeping the optional address collapsed', () => {
+    const fallback = ordinary.indexOf('<details id="collaboration-fallback"')
+    const end = ordinary.indexOf('</details>', fallback)
+    expect(ordinary.slice(fallback, ordinary.indexOf('>', fallback))).not.toContain(' open')
+    expect(ordinary.indexOf('id="collaboration-code"')).toBeLessThan(fallback)
+    expect(ordinary).toContain('id="collaboration-copy" class="secondary" disabled>复制验证码')
+    expect(ordinary.indexOf('id="collaboration-verification"')).toBeGreaterThan(fallback)
+    expect(ordinary.indexOf('id="collaboration-verification"')).toBeLessThan(end)
+    expect(ordinary).toContain('id="collaboration-verify" class="secondary" disabled>重新打开 GitHub')
+    expect(ordinary).not.toContain('本页不会自动打开浏览器')
+    const projectPanel = readFileSync(resolve('src/renderer/cloud-project-panel.ts'), 'utf8')
+    expect(projectPanel).toContain('id="cp-authorization"'); expect(projectPanel).toContain('await this.api!.openAuthorization()')
+  })
+  it('preserves closed developer settings, the preparation gate and independent local history', () => {
+    expect(html.slice(developer, html.indexOf('>', developer))).not.toContain(' open')
+    expect(html).toContain('id="history-list"'); expect(html).toContain('id="setup-dialog"')
+    expect(main).toContain('this.setup.verified && this.environment?.available === true')
+    expect(main).toContain('this.collaboration.setClosing(closing)'); expect(main).toContain('this.documents.setClosing(closing)')
+    expect(main).toContain('this.api.acknowledgeClose(event.requestId, this.documents.buffer.dirty)')
+  })
+  it('wires an optional bridge and contains no persistence, logging or HTML injection', () => {
+    expect(main).toContain('paperstudioCollaboration?: CollaborationApi')
+    expect(panel + model).not.toMatch(/localStorage|sessionStorage|innerHTML|outerHTML|console\.|fetch\(/)
+    const initialize = panel.slice(panel.indexOf('  initialize():'), panel.indexOf('  setClosing('))
+    expect(initialize).toContain("this.request('status')")
+    expect(initialize).not.toMatch(/startLogin|openVerification|api\.projects/)
+    expect(panel).toContain('await api.openVerification()')
+  })
+})

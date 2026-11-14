@@ -1,0 +1,43 @@
+name gbt7714
+category Package
+revision 80402
+shortdesc A BibTeX implementation of China National Standard GB/T 7714
+relocated 1
+longdesc The package provides a comprehensive and configurable BibTeX
+longdesc implementation of the Chinese National Standard GB/T 7714,
+longdesc Information and documentation-rules for bibliographic
+longdesc references and citations to information resources. The BibTeX
+longdesc styles included in the package support both numeric and
+longdesc author-year citation systems, and are fully compatible with the
+longdesc natbib package for advanced citation commands and formatting.
+longdesc These styles are designed to automatically detect the language
+longdesc (Chinese or English) of each bibliographic entry and apply the
+longdesc appropriate localization. Additionally, the package exposes a
+longdesc range of configuration options, allowing users to easily adapt
+longdesc the output to the requirements of specific academic journals or
+longdesc institutions.
+depend bibtex
+depend natbib
+depend url
+runfiles size=315
+ RELOC/bibtex/bib/gbt7714/gbt7714-examples.bib
+ RELOC/bibtex/bst/gbt7714/gbt7714-1987-authoryear.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-1987-numeric.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2005-authoryear.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2005-numeric.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2015-authoryear.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2015-numeric.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2025-authoryear.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-2025-numeric.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-author-year.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-authoryear.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-numeric.bst
+ RELOC/bibtex/bst/gbt7714/gbt7714-numerical.bst
+ RELOC/tex/latex/gbt7714/gbt7714.sty
+catalogue-contact-announce https://github.com/zepinglee/gbt7714-bibtex-style/releases
+catalogue-contact-bugs https://github.com/zepinglee/gbt7714-bibtex-style/issues
+catalogue-contact-repository https://github.com/zepinglee/gbt7714-bibtex-style
+catalogue-ctan /biblio/bibtex/contrib/gbt7714
+catalogue-license lppl1.3c
+catalogue-topics bibtex-supp chinese std-conform
+catalogue-version 3.1.1

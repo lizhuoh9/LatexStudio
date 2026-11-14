@@ -1,0 +1,7 @@
+.repository-transfer { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #d8e2dc; border-radius: 8px; background: #f7faf8; }
+.repository-transfer h3 { margin: 0 0 7px; font-size: 13px; }
+.repository-transfer-state { display: block; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.repository-transfer-note { margin: 8px 0 0; color: #68736c; font-size: 11px; line-height: 1.7; }
+.repository-transfer-error { margin: 7px 0; color: #9c3e30; font-size: 12px; line-height: 1.7; }
+.repository-transfer[data-cancel-pending="true"], .repository-transfer[data-phase="cancelling"] { border-color: #d5b787; background: #fffaf0; }
+.repository-transfer .button-row { margin: 10px 0 0; }

@@ -1,0 +1,37 @@
+name xecjk
+category Package
+revision 80059
+shortdesc Typeset CJK in XeLaTeX
+relocated 1
+longdesc xeCJK is a package for typesetting documents in Chinese,
+longdesc Japanese or Korean with XeLaTeX. It provides CJK-specific
+longdesc automatic glue between CJK and non-CJK characters, full control
+longdesc over CJK punctuation compression, separate font families for
+longdesc CJK and Latin scripts, and a number of fine-grained typographic
+longdesc refinements for the CJK script.
+depend ctex
+depend fontspec
+depend l3kernel
+depend l3packages
+runfiles size=214
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/full-stop.map
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/full-stop.tec
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/fullwidth-stop.map
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/fullwidth-stop.tec
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/han-simp.map
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/han-simp.tec
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/han-trad.map
+ RELOC/fonts/misc/xetex/fontmapping/xecjk/han-trad.tec
+ RELOC/tex/xelatex/xecjk/xeCJK-listings.sty
+ RELOC/tex/xelatex/xecjk/xeCJK.cfg
+ RELOC/tex/xelatex/xecjk/xeCJK.sty
+ RELOC/tex/xelatex/xecjk/xeCJKfntef.sty
+ RELOC/tex/xelatex/xecjk/xunicode-addon.sty
+ RELOC/tex/xelatex/xecjk/xunicode-extra.def
+catalogue-contact-development https://github.com/CTeX-org
+catalogue-contact-repository https://github.com/CTeX-org/ctex-kit
+catalogue-contact-support https://github.com/CTeX-org/ctex-kit/issues
+catalogue-ctan /macros/xetex/latex/xecjk
+catalogue-license lppl1.3c
+catalogue-topics chinese japanese korean tagged-pdf-unsupported xetex
+catalogue-version 3.10.6

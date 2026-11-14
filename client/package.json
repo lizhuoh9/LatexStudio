@@ -1,0 +1,158 @@
+{
+  "name": "paperstudio-client",
+  "version": "0.3.0",
+  "private": true,
+  "description": "LatexStudio: local LaTeX projects, PDF preview and safe GitHub synchronization.",
+  "license": "AGPL-3.0-only",
+  "author": "LatexStudio contributors",
+  "homepage": "https://github.com/lizhuoh9/LatexStudio",
+  "repository": { "type": "git", "url": "https://github.com/lizhuoh9/LatexStudio.git" },
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:smoke": "npm run build && node scripts/smoke.cjs",
+    "test:offline-native": "npm run build && node scripts/smoke-offline.cjs",
+    "prepare:tex-runtime": "node scripts/prepare-bundled-tex.cjs",
+    "pack:win": "npm run prepare:tex-runtime && npm run build && electron-builder --win --x64 --dir",
+    "dist:win": "npm run prepare:tex-runtime && npm run build && electron-builder --win nsis portable --x64",
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --x64",
+    "dist:mac:test": "node scripts/build-macos-test.cjs",
+    "test:mac-contracts": "vitest run tests/mac-desktop.test.ts tests/macos-build.test.ts tests/app-icon.test.ts tests/workspace-window.test.ts tests/editor-",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "test:versions-ui": "npm run build && node scripts/smoke-versions.cjs",
+    "test:cloud-ui": "npm run build && node scripts/smoke-cloud.cjs",
+    "verify:release": "node scripts/release-audit.cjs",
+    "audit:source": "node scripts/audit-source.cjs"
+  },
+  "devDependencies": {
+    "@electron/fuses": "1.8.0",
+    "@types/node": "24.19.2",
+    "@types/yauzl": "3.4.0",
+    "electron": "45.3.0",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  },
+  "build": {
+    "appId": "org.paperstudio.desktop",
+    "productName": "LatexStudio",
+    "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableCookieEncryption": true,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "THIRD_PARTY_NOTICES.md",
+      "src/vendor/ayakaleaf/LICENSE.txt"
+    ],
+    "artifactName": "LatexStudio-${version}-${os}-${arch}.${ext}",
+    "publish": [{ "provider": "github", "owner": "lizhuoh9", "repo": "LatexStudio", "releaseType": "release" }],
+    "win": {
+      "icon": "resources/icons/paperstudio.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signExecutable": false,
+      "verifyUpdateCodeSignature": true,
+      "extraResources": [
+        {
+          "from": "resources/win32/PaperStudio.Sandbox.exe",
+          "to": "win32/PaperStudio.Sandbox.exe"
+        },
+        {
+          "from": "resources/win32/tex-engines",
+          "to": "win32/tex-engines"
+        },
+        {
+          "from": "resources/tex-packages",
+          "to": "tex-packages"
+        },
+        {
+          "from": "resources/win32/tex-patches",
+          "to": "licenses/tex-patches"
+        },
+        {
+          "from": "resources/tex-runtime",
+          "to": "tex-runtime",
+          "filter": [
+            "a13d14ba987873d1bdf81773f5bdfcc34537882b825dd2134f61eb6ee21d5f69.zip",
+            "README.md"
+          ]
+        },
+        {
+          "from": "resources/icons",
+          "to": "icons",
+          "filter": [
+            "paperstudio-256.png"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "LatexStudio-${version}-win-${arch}-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "LatexStudio-${version}-win-${arch}-setup.${ext}",
+      "installerIcon": "resources/icons/paperstudio.ico",
+      "uninstallerIcon": "resources/icons/paperstudio.ico",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "icon": "resources/icons/paperstudio.icns",
+      "extraResources": [
+        {
+          "from": "resources/icons",
+          "to": "icons",
+          "filter": [
+            "paperstudio-256.png"
+          ]
+        }
+      ],
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office"
+    }
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
+    "electron-updater": "6.8.11",
+    "isomorphic-git": "1.44.12",
+    "pdfjs-dist": "6.5.438",
+    "yauzl": "3.4.0"
+  }
+}

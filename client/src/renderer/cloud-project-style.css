@@ -1,0 +1,30 @@
+#cloud-project-workspace { display: grid; gap: 10px; padding: 18px; margin: 12px 0; border: 1px solid var(--border, #d9e0e9); border-radius: 12px; background: var(--panel, #fff); color: var(--text, #24334a); }
+#cloud-project-workspace header, #cloud-project-workspace .cp-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#cloud-project-workspace header { justify-content: space-between; }
+#cloud-project-workspace h3, #cloud-project-workspace p { margin: 0; }
+#cloud-project-workspace label { display: grid; gap: 5px; flex: 1 1 200px; font-size: 12px; }
+#cloud-project-workspace input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border, #cfd9e4); border-radius: 6px; background: var(--background, #f8fafc); color: inherit; }
+#cloud-project-workspace button { min-height: 34px; padding: 7px 12px; border-radius: 6px; cursor: pointer; }
+#cloud-project-workspace button:disabled { opacity: .5; cursor: not-allowed; }
+#cloud-project-workspace #cp-create, #cloud-project-workspace #cp-sync { background: var(--accent, #2563eb); border: 1px solid var(--accent, #2563eb); color: #fff; }
+#cloud-project-workspace #cp-auto[aria-pressed="true"] { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); }
+#cloud-project-workspace .cp-note { font-size: 12px; line-height: 1.6; color: var(--muted, #64748b); }
+#cloud-project-workspace #cp-message { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+#cloud-project-workspace #cp-status { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+#cloud-project-workspace ul { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
+#cloud-project-workspace li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 9px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; overflow-wrap: anywhere; }
+#cloud-project-workspace li small { color: var(--muted, #64748b); margin-right: auto; }
+#cloud-project-workspace input:focus-visible, #cloud-project-workspace button:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+#cloud-project-workspace .cp-group { border-top: 1px solid var(--border, #e2e8f0); padding-top: 10px; }
+#cloud-project-workspace .cp-group > summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 0; }
+#cloud-project-workspace .cp-group[open] > :not(summary) { margin-top: 10px; }
+#cloud-project-workspace #cp-connected { display: grid; gap: 10px; }
+#cloud-project-workspace #cp-connected[hidden] { display: none; }
+#cloud-project-workspace #cp-authorization { justify-self: start; font-size: 12px; background: transparent; color: var(--muted, #64748b); border: 0; padding: 2px 0; min-height: 24px; }
+#cloud-project-workspace .cp-boundaries { color: var(--muted, #64748b); font-size: 11px; }
+#cloud-project-workspace .cp-boundaries > summary { cursor: pointer; }
+#cloud-project-workspace .cp-boundaries[open] > p { margin-top: 7px; }
+#project-sync[hidden], #project-sync-status[hidden] { display: none; }
+#project-sync-status { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #64748b); font-size: 11px; }
+#project-sync:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 2px; }
+@media (max-width: 650px) { #cloud-project-workspace { padding: 12px; } #cloud-project-workspace .cp-row > button { flex: 1 1 160px; } }

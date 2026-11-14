@@ -1,0 +1,26 @@
+/* Native button/list navigation and original local SVG artwork; no font-dependent file glyphs. */
+#file-tree .file-tree-children { list-style: none; margin: 0 0 2px 12px; padding: 0 0 0 8px; border-left: 1px solid var(--border); }
+#file-tree .file-tree-children[hidden] { display: none; }
+#file-tree .directory-entry { display: flex; align-items: center; justify-content: flex-start; gap: 7px; width: 100%; min-width: 0; min-height: 30px; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); text-align: left; }
+#file-tree .directory-entry:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+#file-tree .directory-entry::before { content: ""; flex: 0 0 auto; width: 0; height: 0; border-top: 3px solid transparent; border-bottom: 3px solid transparent; border-left: 4px solid currentColor; transform-origin: 2px 3px; }
+#file-tree .directory-entry[aria-expanded="true"]::before { transform: rotate(90deg); }
+#file-tree .directory-entry > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+#file-tree .file-entry { min-height: 30px; padding: 6px 8px; }
+#file-tree .file-entry::before { content: none; display: none; }
+#file-tree .file-entry > span { min-width: 0; }
+#file-tree .file-entry > small { flex-shrink: 0; white-space: nowrap; }
+#file-tree .file-tree-empty { padding: 5px 8px; color: var(--muted); font-size: 10px; }
+#file-tree .file-icon { display: block; flex: 0 0 18px; width: 18px; height: 18px; overflow: visible; pointer-events: none; }
+#file-tree .file-icon-tex { color: #7bc5ed; }
+#file-tree .file-icon-bibliography { color: #e6bf73; }
+#file-tree .file-icon-markdown { color: #85b9ff; }
+#file-tree .file-icon-pdf { color: #f08484; }
+#file-tree .file-icon-image { color: #81cba7; }
+#file-tree .file-icon-code { color: #bca0ef; }
+#file-tree .file-icon-file { color: #b7c2cf; }
+#file-tree .file-icon-folder { color: #d6b56d; }
+#file-tree .file-icon-folder path, #file-tree .icon-page { fill: currentColor; fill-opacity: .1; }
+#file-tree .directory-entry[aria-expanded="true"] .folder-closed-shape { display: none; }
+#file-tree .directory-entry:not([aria-expanded="true"]) .folder-open-shape { display: none; }
+@media (forced-colors: active) { #file-tree .file-icon { color: ButtonText; } }

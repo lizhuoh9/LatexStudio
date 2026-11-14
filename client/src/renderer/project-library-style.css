@@ -1,0 +1,43 @@
+/* Project homepage only; editor routes and project-open/create controls are owned by the shell. */
+#project-library { --pl-columns: minmax(0,1fr) minmax(100px,.24fr) minmax(170px,.3fr); display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 26px 28px; color: #e4eaf0; background: #212c37; border: 1px solid #35424f; border-radius: 8px; }
+#project-library .pl-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; margin-bottom: 24px; }
+#project-library .pl-heading h2 { margin: 0; color: #f4f7fa; font-size: 23px; font-weight: 600; letter-spacing: -.3px; }
+#project-library .pl-heading-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#project-library button, #project-library input { font: inherit; }
+#project-library-search { width: min(290px,44vw); min-width: 160px; min-height: 36px; padding: 7px 11px; color: #f0f4f8; background: #18232e; border: 1px solid #536170; border-radius: 5px; }
+#project-library-search::placeholder { color: #aab6c2; }
+#project-library-refresh { min-height: 36px; padding: 6px 12px; border: 1px solid #536170; border-radius: 5px; background: transparent; color: #e1e8ee; cursor: pointer; }
+#project-library-refresh:hover:not(:disabled) { background: #303d49; }
+#project-library .pl-columns { display: grid; grid-template-columns: var(--pl-columns) 40px; gap: 12px; padding: 11px 10px; color: #aebac6; border-bottom: 1px solid #43515f; font-size: 11px; }
+#project-library-list { list-style: none; padding: 0; margin: 0; min-height: 0; overflow: auto; }
+#project-library .pl-project { display: grid; grid-template-columns: minmax(0,1fr) 40px; align-items: stretch; column-gap: 12px; min-width: 0; border-bottom: 1px solid #35424f; }
+#project-library .pl-project:hover { background: #293642; }
+#project-library .pl-project.is-active { background: #263b39; box-shadow: inset 3px 0 #5ab994; }
+#project-library .pl-open { display: grid; grid-template-columns: var(--pl-columns); align-items: center; gap: 12px; min-width: 0; width: 100%; min-height: 62px; padding: 16px 10px; border: 0; border-radius: 0; color: #e4eaf0; background: transparent; text-align: left; cursor: pointer; font-size: 13px; }
+#project-library .pl-open:hover:not(:disabled) { background: transparent; }
+#project-library .pl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+#project-library .pl-badge { min-width: 0; color: #bac7d3; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#project-library .pl-modified { min-width: 0; color: #bac7d3; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#project-library .is-active .pl-name { color: #bcebd6; }
+#project-library .pl-forget { align-self: center; justify-self: center; width: 30px; min-height: 30px; padding: 0; border: 0; border-radius: 5px; color: #aebbc7; background: transparent; cursor: pointer; font-size: 20px; }
+#project-library .pl-forget:hover:not(:disabled) { background: #4b3736; color: #ffd1c6; }
+#project-library .pl-empty { margin: 0; padding: 36px 10px; color: #aebac6; text-align: center; }
+#project-library button:disabled, #project-library input:disabled { cursor: default; opacity: .45; }
+#project-library button:focus-visible, #project-library input:focus-visible { outline: 2px solid #7dd7b0; outline-offset: 2px; }
+#project-library-status { margin: 14px 0 0; color: #d5dee6; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#project-library-status[hidden] { display: none; }
+@media (max-width: 760px) {
+  #project-library { --pl-columns: minmax(0,1fr) 85px 138px; padding: 20px 14px; }
+  #project-library .pl-heading { align-items: flex-start; }
+  #project-library .pl-columns, #project-library .pl-open { gap: 8px; }
+  #project-library .pl-project, #project-library .pl-columns { column-gap: 8px; }
+  #project-library .pl-modified { font-size: 10px; white-space: normal; }
+}
+@media (max-width: 480px) {
+  #project-library { --pl-columns: minmax(0,1fr) 64px 104px; }
+  #project-library .pl-heading-actions { width: 100%; }
+  #project-library-search { flex: 1; width: auto; }
+  #project-library .pl-columns { font-size: 10px; }
+  #project-library .pl-open { font-size: 12px; }
+  #project-library .pl-badge { font-size: 10px; }
+}

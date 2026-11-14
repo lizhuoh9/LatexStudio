@@ -1,0 +1,16 @@
+.collaboration-card { border: 1px solid #cfdcd6; border-radius: 9px; padding: 15px; background: #f7faf8; margin-bottom: 16px; }
+.collaboration-card h3 { margin: 0 0 8px; font-size: 15px; }
+.collaboration-state { display: block; font-size: 13px; line-height: 1.65; color: #254b39; }
+.collaboration-detail, .collaboration-note { color: #596a61; font-size: 12px; line-height: 1.65; margin: 8px 0; overflow-wrap: anywhere; }
+.collaboration-card .button-row { flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.collaboration-card button { padding: 6px 10px; font-size: 12px; }
+.collaboration-authorization { border: 1px solid #d7dfda; border-radius: 7px; padding: 12px; margin-top: 12px; background: white; }
+.collaboration-code { display: block; font: 600 25px/1.5 Consolas,monospace; letter-spacing: .09em; color: #243c30; user-select: text; }
+.collaboration-verification { font: 11px/1.6 Consolas,monospace; color: #607469; overflow-wrap: anywhere; }
+.collaboration-error { border-left: 3px solid #b26a31; padding: 6px 9px; font-size: 12px; color: #835126; white-space: pre-wrap; }
+.collaboration-project-list { list-style: none; padding: 0; margin: 9px 0; max-height: 180px; overflow: auto; }
+.collaboration-project-list li { padding: 7px 0; border-bottom: 1px solid #e1e7e3; overflow-wrap: anywhere; font-size: 12px; }
+.collaboration-project-list strong, .collaboration-project-list small { display: block; }
+.collaboration-project-list small { color: #66776c; font-size: 11px; margin-top: 3px; }
+.collaboration-limits { border: 1px solid #e2d8ba; border-radius: 7px; background: #fbf8ed; padding: 9px 11px; font-size: 12px; line-height: 1.6; color: #766038; }
+.collaboration-project-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }

@@ -1,0 +1,10 @@
+client/node_modules/
+client/out/
+client/release/
+client/resources/tex-runtime/*.zip
+.env
+.env.*
+*.pem
+*.pfx
+*.p12
+.DS_Store

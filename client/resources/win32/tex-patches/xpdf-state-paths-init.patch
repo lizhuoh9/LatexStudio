@@ -1,0 +1,15 @@
+diff --git a/libs/xpdf/xpdf-src/xpdf/GlobalParams.cc b/libs/xpdf/xpdf-src/xpdf/GlobalParams.cc
+--- a/libs/xpdf/xpdf-src/xpdf/GlobalParams.cc
++++ b/libs/xpdf/xpdf-src/xpdf/GlobalParams.cc
+@@ -1088,6 +1088,11 @@
+ }
+ 
+ void GlobalParams::initStateFilePaths() {
++  // A platform state-folder lookup can fail, e.g. inside a Windows AppContainer.
++  // The destructor deletes these members even when that lookup returns early.
++  pagesFile = NULL;
++  tabStateFile = NULL;
++  sessionFile = NULL;
+ #ifdef _WIN32
+   // Windows state files are {APPDATA}/xpdf/xpdf.pages etc
+   char path[MAX_PATH];

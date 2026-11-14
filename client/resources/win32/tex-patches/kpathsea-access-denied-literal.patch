@@ -1,0 +1,74 @@
+diff --git a/texk/kpathsea/mingw32.c b/texk/kpathsea/mingw32.c
+index a795a3a..2d88823 100644
+--- a/texk/kpathsea/mingw32.c
++++ b/texk/kpathsea/mingw32.c
+@@ -304,6 +304,23 @@ _parse_root (char * name, char ** pPath)
+ }
+ 
+ /* Get long base name for name; name is assumed to be absolute.  */
++/* PaperStudio patch: an ancestor that a sandboxed process may not list
++   (ERROR_ACCESS_DENIED) keeps its literal component instead of failing.
++   Missing paths still fail; wildcard components are never accepted.  */
++static int
++literal_basename (const char * name, char * buf, int size)
++{
++  const char *p = name + strlen (name);
++  int len;
++
++  while (p > name && p[-1] != '\\' && p[-1] != ':') p--;
++  len = strlen (p);
++  if (len == 0 || len >= size || strchr (p, '*') || strchr (p, '?'))
++    return 0;
++  memcpy (buf, p, len + 1);
++  return len;
++}
++
+ static int
+ get_long_basename (char * name, char * buf, int size)
+ {
+@@ -337,6 +354,8 @@ get_long_basename (char * name, char * buf, int size)
+         len = 0;
+       FindClose (dir_handle);
+     }
++  else if (GetLastError () == ERROR_ACCESS_DENIED)
++    len = literal_basename (name, buf, size);
+   return len;
+ }
+ 
+diff --git a/texk/kpathsea/win32lib.c b/texk/kpathsea/win32lib.c
+index 2e4f0f0..5712ef4 100644
+--- a/texk/kpathsea/win32lib.c
++++ b/texk/kpathsea/win32lib.c
+@@ -272,16 +272,28 @@ drive name
+             cnt += 3;
+             if(cnt > len) return 0;
+             strcat(buff, "../");
+-         } else {
+-            if((hnd = FindFirstFile(q, &ffd)) == INVALID_HANDLE_VALUE) {
+-               return 0;
+-            }
++         } else if((hnd = FindFirstFile(q, &ffd)) != INVALID_HANDLE_VALUE) {
+             FindClose(hnd);
+             cnt += strlen(ffd.cFileName);
+             cnt++;
+             if(cnt > len) return 0;
+             strcat(buff, ffd.cFileName);
+             strcat(buff, "/");
++         } else {
++/*
++PaperStudio patch: an ancestor that a sandboxed process may not list
++(ERROR_ACCESS_DENIED) keeps its literal component instead of failing.
++Missing paths still fail; wildcard components are never accepted.
++*/
++            char *c = p;
++            if(GetLastError() != ERROR_ACCESS_DENIED) return 0;
++            while(c > q && *(c-1) != '\\') c--;
++            if(*c == '\0' || strchr(c, '*') || strchr(c, '?')) return 0;
++            cnt += strlen(c);
++            cnt++;
++            if(cnt > len) return 0;
++            strcat(buff, c);
++            strcat(buff, "/");
+          }
+          *p = '\\';
+       }

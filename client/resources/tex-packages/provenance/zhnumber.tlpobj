@@ -1,0 +1,23 @@
+name zhnumber
+category Package
+revision 80458
+shortdesc Typeset Chinese representations of numbers
+relocated 1
+longdesc The package provides commands to typeset Chinese
+longdesc representations of numbers. The main difference between this
+longdesc package and CJKnumb is that the commands provided are
+longdesc expandable in the proper way. It also provides counting-rod
+longdesc numerals.
+runfiles size=18
+ RELOC/tex/latex/zhnumber/zhnumber-big5.cfg
+ RELOC/tex/latex/zhnumber/zhnumber-gbk.cfg
+ RELOC/tex/latex/zhnumber/zhnumber-utf8.cfg
+ RELOC/tex/latex/zhnumber/zhnumber.sty
+catalogue-contact-bugs https://github.com/CTeX-org/ctex-kit/issues
+catalogue-contact-home https://www.ctex.org
+catalogue-contact-repository https://github.com/CTeX-org/ctex-kit
+catalogue-contact-support https://github.com/CTeX-org/ctex-kit/issues
+catalogue-ctan /macros/latex/contrib/zhnumber
+catalogue-license lppl1.3c
+catalogue-topics chinese numbers tagged-pdf
+catalogue-version 3.1

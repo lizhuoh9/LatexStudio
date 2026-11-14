@@ -1,0 +1,79 @@
+name: Build versioned installers
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - name: Require exact package/tag version
+        run: node -e "if(process.env.GITHUB_REF_NAME !== 'v'+require('./package.json').version) process.exit(1)"
+      - run: npm run audit:source
+      - run: npm run typecheck
+      - if: runner.os == 'Windows'
+        run: npm test
+      - if: runner.os == 'Windows'
+        name: Windows fixed offline resources and unsigned NSIS/portable
+        run: npm run dist:win -- --publish never
+      - if: runner.os == 'macOS'
+        name: Native Mac editing test zip (ad-hoc, no notarization or TeX)
+        run: npm run dist:mac:test
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-installers
+          if-no-files-found: error
+          path: |
+            client/release/LatexStudio-*.exe
+            client/release/*.blockmap
+            client/release/latest*.yml
+      - if: runner.os == 'macOS'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mac-editing-test
+          if-no-files-found: error
+          path: |
+            client/release/macos-test/LatexStudio-*.zip
+            client/release/macos-test/latest*.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: downloads
+          merge-multiple: true
+      - name: Corresponding application source and artifact checksums
+        shell: bash
+        run: |
+          git archive --format=zip --output="downloads/LatexStudio-${GITHUB_REF_NAME}-source.zip" HEAD
+          (cd downloads && sha256sum *.exe *.zip *.yml *.blockmap > SHA256SUMS)
+      - name: Publish immutable version (no silent replacement)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" downloads/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "LatexStudio $GITHUB_REF_NAME" --notes-file docs/RELEASE-NOTES.md

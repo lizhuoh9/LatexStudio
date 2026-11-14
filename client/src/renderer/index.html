@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>LatexStudio · 本地写作工作台</title>
+</head>
+<body data-ui-theme="overleaf" data-page="home">
+  <div class="app-shell">
+    <header class="topbar"><button id="home-open" class="brand-link" title="返回全部论文" aria-label="返回全部论文"><span class="brand-mark" aria-hidden="true">L</span><strong>LatexStudio</strong></button>
+      <div id="project-root" class="project-heading editor-only"><strong id="project-name">尚未打开项目</strong></div>
+      <div class="editor-header-actions editor-only"><button id="cloud-open" class="text-button" aria-controls="revision-panel" aria-expanded="false">◷ 修改历史</button><details id="layout-menu" class="layout-menu"><summary>▣ 布局</summary><div><button id="layout-files" aria-pressed="true">文件树</button><button id="layout-preview" aria-pressed="true">PDF 预览</button><button id="log-toggle" aria-pressed="false">编译日志</button></div></details><button id="project-share" class="share-button">分享</button></div>
+      <details id="account-menu" class="account-menu"><summary id="account-toggle" aria-label="账号与设置"><span id="account-avatar" class="account-avatar is-guest" aria-hidden="true"></span><span id="account-label">未登录</span></summary><div class="account-menu-panel"><strong id="account-name">离线使用</strong><button id="account-settings" class="text-button">账号与授权</button><button id="setup-open" class="text-button">编译组件</button><button id="update-open" class="text-button">检查更新</button><button id="about-open" class="text-button">关于与开源许可</button></div></details>
+    </header>
+    <main id="project-home" class="project-home" aria-label="全部论文"><aside class="dashboard-sidebar"><nav aria-label="项目导航"><button id="dashboard-all" aria-current="page">▤ 全部论文</button></nav><div class="dashboard-bottom"><button id="dashboard-help" class="text-button">ⓘ 帮助与关于</button></div></aside><section class="dashboard-content"><div class="dashboard-actions"><button id="project-open" class="secondary" data-lock>打开本地论文</button><button id="project-create" data-lock>新建论文</button></div><section id="project-library" class="project-library" aria-label="项目列表"></section></section></main>
+    <div id="editor-workspace" class="editor-workspace" hidden><main class="workspace">
+      <aside class="files-panel" aria-label="当前论文文件与大纲"><section id="paper-contents" class="paper-contents" aria-labelledby="paper-files-title"><div class="panel-heading"><h2 id="paper-files-title">⌄ 文件树</h2><button id="file-create" class="text-button" data-lock title="新建文件">＋ 新建</button></div><div id="project-actions" class="project-actions" hidden><button id="project-sync" disabled>同步当前论文</button><button id="project-settings" class="text-button">项目设置</button><span id="project-sync-status" role="status" hidden></span></div><p id="file-tree-context" class="panel-help"></p><ul id="file-tree" class="file-tree" aria-label="当前论文目录"><li class="empty">尚未打开论文。</li></ul><span id="file-count" class="panel-footer">0 个文件</span></section><section class="outline-panel" aria-labelledby="outline-title"><div class="panel-heading"><h2 id="outline-title">⌄ 文件大纲</h2></div><ol id="file-outline" aria-label="当前文件章节"></ol></section></aside>
+      <section id="editor-panel" class="editor-panel" aria-label="编辑区"><div class="panel-heading editor-tabs"><h2 id="active-file">源文件</h2><div class="editor-heading-actions"><span id="save-state">未打开文件</span><button id="file-save" class="secondary" data-lock aria-keyshortcuts="Control+s Meta+s" title="保存当前文件（Ctrl+S / ⌘S）">保存 <kbd>Ctrl S</kbd></button></div></div><div class="editor-toolbar" aria-label="源码编辑工具"><button id="edit-undo" class="icon-button" aria-label="撤销" title="撤销">↶</button><button id="edit-redo" class="icon-button" aria-label="重做" title="重做">↷</button><span class="tool-separator"></span><button id="edit-bold" class="text-button" aria-label="加粗" title="加粗">B</button><button id="edit-italic" class="text-button" aria-label="斜体" title="斜体">I</button><button id="edit-search" class="icon-button" aria-label="查找" title="查找">⌕</button><span class="source-mode">源码</span></div>
+        <div id="external-warning" class="warning" role="alert" hidden><p id="external-message">文件在外部发生变化。此处的编辑内容已保留，不会静默覆盖。</p><div><button id="file-reload" class="secondary" data-lock>重新载入磁盘文件</button><button id="file-copy" class="secondary" data-lock>将草稿另存副本</button></div></div>
+        <div id="source-editor"></div><p id="editor-empty" class="editor-empty"><strong>打开项目开始编辑</strong><span>从左侧选择文件。</span></p>
+      </section>
+      <section class="preview-panel" aria-label="PDF 预览"><div class="panel-heading preview-toolbar"><div class="compile-actions"><button id="compile" data-lock disabled>▶ 编译</button><button id="cancel-compile" class="icon-button" disabled title="取消编译" aria-label="取消编译">■</button><details class="advanced-compile"><summary aria-label="编译选项" title="编译选项">⌄</summary><div class="advanced-fields"><label class="main-select">主文件 <select id="main-file" data-lock aria-label="编译主文件"><option value="">自动选择项目主文件</option></select></label><label>引擎 <select id="engine" data-lock aria-label="编译引擎"><option value="pdflatex">pdfLaTeX</option><option value="xelatex">XeLaTeX</option><option value="lualatex">LuaLaTeX</option></select></label></div></details><button id="log-open" class="text-button" aria-controls="log-panel" aria-expanded="false" title="打开或收起编译日志">日志</button></div><div id="environment-summary" class="environment"><span id="environment" role="status" aria-live="polite">正在检查编译组件…</span></div><div class="pdf-controls"><button id="pdf-previous" class="icon-button" aria-label="上一页">‹</button><span id="pdf-position">尚未编译</span><button id="pdf-next" class="icon-button" aria-label="下一页">›</button><button id="pdf-smaller" class="icon-button" aria-label="缩小">−</button><button id="pdf-larger" class="icon-button" aria-label="放大">＋</button></div></div>
+        <div class="pdf-scroll"><div id="pdf-empty" class="empty pdf-empty"><span class="paper-illustration" aria-hidden="true"></span><strong>PDF 预览</strong><p>编译后在这里查看论文。</p></div><div id="pdf-pages"></div></div>
+      </section>
+      <aside id="revision-panel" class="revision-panel" aria-labelledby="revision-title" hidden><div class="panel-heading revision-heading"><h2 id="revision-title">修改历史</h2><div><button id="revision-refresh" class="text-button" data-lock>刷新</button><button id="revision-close" class="icon-button" aria-label="关闭修改历史">×</button></div></div>
+        <p id="revision-context" class="panel-help"></p><ol id="revision-list" class="revision-list" aria-label="当前论文修改时间线"></ol><p id="revision-status" role="status" aria-live="polite">打开论文后查看修改记录。</p>
+        <section id="revision-detail"><p id="revision-description" class="revision-description"></p><p id="revision-diff-summary" class="help"></p><pre id="revision-diff" class="revision-diff" tabindex="0"></pre><details><summary>查看完整前后内容</summary><div class="revision-comparison"><div><h4>修改前</h4><pre id="revision-before" tabindex="0"></pre></div><div><h4>此版本</h4><pre id="revision-after" tabindex="0"></pre></div></div></details><button id="revision-restore" class="secondary" disabled>回退此文件…</button></section>
+        <details class="snapshot-tools"><summary>本地快照</summary><label for="snapshot-summary">本次进展</label><input id="snapshot-summary" maxlength="240" placeholder="例如：完成方法章节"><div class="button-row"><button id="cloud-snapshot" class="secondary" data-lock>保存快照</button><button id="cloud-refresh" class="secondary" data-lock>刷新</button></div><ul id="history-list" class="detail-list"><li>打开论文后查看快照。</li></ul></details>
+      </aside>
+    <section id="log-panel" class="log-panel" aria-label="编译与操作日志" hidden><div class="panel-heading"><h2>编译日志</h2><div><button id="log-clear" class="text-button">清空</button><button id="log-close" class="icon-button" aria-label="关闭编译日志">×</button></div></div><pre id="log" tabindex="0"></pre></section>
+    </main></div><span id="status" class="workbench-notice" role="status" aria-live="polite" hidden></span>
+  </div>
+  <dialog id="startup-dialog" class="small-dialog startup-dialog" aria-labelledby="startup-title" aria-describedby="startup-status">
+    <h2 id="startup-title">LatexStudio</h2>
+    <p id="startup-status" class="startup-status" role="status" aria-live="polite">正在连接 GitHub…</p>
+    <div class="startup-actions"><button id="startup-login" disabled>GitHub登录</button><button id="startup-offline" class="secondary" autofocus>离线使用</button></div>
+  </dialog>
+  <dialog id="setup-dialog" class="setup-dialog" aria-labelledby="setup-title">
+    <div class="dialog-heading"><h2 id="setup-title">编译组件</h2><button id="setup-close" class="icon-button" aria-label="关闭组件面板">×</button></div>
+    <div class="setup-state-card"><strong id="setup-status" role="status" aria-live="polite">正在检查编译组件…</strong><p id="setup-detail"></p><progress id="setup-progress" aria-label="编译组件配置进度" hidden></progress><p id="setup-progress-label" class="setup-progress-label"></p></div>
+    <p id="setup-error" class="setup-error" role="alert" hidden></p><p id="setup-native-detail" class="setup-error" role="alert" hidden></p>
+    <div class="button-row"><button id="setup-prepare" disabled hidden>重试配置</button><button id="setup-cancel" class="secondary" disabled hidden>取消</button><button id="setup-refresh" class="secondary">重新检查</button></div>
+  </dialog>
+  <dialog id="cloud-dialog" class="cloud-dialog account-dialog" aria-labelledby="cloud-title"><div class="dialog-heading"><h2 id="cloud-title">账号与授权</h2><button id="cloud-close" class="icon-button" aria-label="关闭">×</button></div>
+    <div class="collaboration-card" aria-labelledby="collaboration-title">
+      <div class="collaboration-account-heading"><h3 id="collaboration-title">GitHub</h3><small id="collaboration-session-expiry" class="collaboration-note" hidden></small></div>
+      <strong id="collaboration-state" class="collaboration-state" role="status" aria-live="polite">正在连接 GitHub…</strong><p id="collaboration-detail" class="collaboration-detail" hidden></p><p id="collaboration-error" class="collaboration-error" role="alert" hidden></p>
+      <div class="button-row"><button id="collaboration-login" disabled>GitHub登录</button><button id="collaboration-cancel" class="secondary" disabled hidden>取消登录</button><button id="collaboration-logout" class="secondary" disabled hidden>退出账号</button><button id="collaboration-status" class="secondary" disabled>重试</button></div>
+      <div id="collaboration-authorization" class="collaboration-authorization" hidden>
+        <div class="collaboration-code-row"><output id="collaboration-code" class="collaboration-code" aria-label="GitHub 验证码"></output><button id="collaboration-copy" class="secondary" disabled>复制验证码</button></div>
+        <div class="collaboration-authorization-heading"><p id="collaboration-expiry" class="collaboration-note"></p><button id="collaboration-verify" class="secondary" disabled>重新打开 GitHub</button></div>
+        <details id="collaboration-fallback" class="collaboration-fallback"><summary>授权地址</summary><p id="collaboration-verification" class="collaboration-verification"></p></details>
+      </div>
+      <details id="collaboration-account-details" class="collaboration-account-details"><summary>账号与授权</summary><p class="collaboration-note">有效登录由操作系统加密保存，重启后重新验证；系统安全存储不可用时仅本次运行有效。授权到期后需重新登录。退出账号会移除本机保存的登录，不撤销 GitHub 授权；仓库访问范围在项目授权中管理。</p></details>
+      <div id="collaboration-project-area" hidden><div class="collaboration-project-heading"><h3>已授权仓库</h3><button id="collaboration-projects" class="secondary" disabled hidden>查看项目</button></div><ul id="collaboration-project-list" class="collaboration-project-list"></ul></div>
+    </div>
+  </dialog>
+  <dialog id="project-dialog" class="project-dialog" aria-labelledby="project-settings-title"><div class="dialog-heading"><div><h2 id="project-settings-title">项目设置</h2><p id="project-settings-name"></p></div><button id="project-close" class="icon-button" aria-label="关闭项目设置">×</button></div>
+    <section id="cloud-project-workspace" aria-label="当前论文的合作设置"></section>
+    <section id="repository-transfer" class="repository-transfer" aria-labelledby="repository-transfer-title" data-phase="unknown">
+      <h3 id="repository-transfer-title">后台传输</h3><strong id="repository-transfer-state" class="repository-transfer-state" role="status" aria-live="polite">尚未取得后台传输状态。</strong><p id="repository-transfer-error" class="repository-transfer-error" role="alert" hidden></p>
+      <div class="button-row"><button id="repository-transfer-cancel" class="secondary" disabled>取消当前传输</button><button id="repository-transfer-status" class="secondary" disabled>刷新传输状态</button></div>
+      <p class="repository-transfer-note">取消是请求并等待操作与清理收束，不是强制终止，也不保证回滚。部分本地变更或远端更新可能已经生效，不会撤回已生效修改。实际登录、项目访问与传输状态分别显示；未配置发布方 GitHub App 时，不会启用普通云端操作。</p>
+    </section>
+    <section class="project-debug">
+      <details id="developer-sync" class="developer-sync"><summary>开发者调试（旧 PAT 适配器）</summary><p class="developer-warning">以下是独立旧适配器的手动调试入口，不是同学使用步骤；其结果不能替代普通 App 登录与私有项目流程的验收。</p>
+        <label for="github-url">GitHub 项目 URL（调试）</label><input id="github-url" type="url" placeholder="https://github.com/账号/项目" autocomplete="off" spellcheck="false" maxlength="2048">
+        <label for="github-token">PAT / 访问密钥（临时输入）</label><input id="github-token" type="password" autocomplete="off" spellcheck="false" placeholder="仅供受控调试，不写入界面存储或日志" maxlength="4096">
+        <div class="button-row"><button id="cloud-connect" data-lock>关联调试账号</button><button id="cloud-clone" class="secondary" data-lock>下载为本地项目</button><button id="cloud-disconnect" class="text-button" data-lock>断开调试关联</button></div>
+        <p id="cloud-account" class="account">尚未读取开发者关联状态</p><p class="help">凭据取出后立即清空，收起此区或关闭面板也会清空。开发者关联状态不是普通图形登录验收。</p>
+        <h3>调试同步文件</h3><p id="cloud-status" role="status">展开后可检查开发者状态。</p><ul id="pending-list" class="detail-list"></ul><button id="cloud-sync" data-lock>保存并同步（调试）</button>
+      </details>
+    </section>
+  </dialog>
+  <dialog id="confirm-dialog" class="small-dialog" aria-labelledby="confirm-title"><form method="dialog"><h2 id="confirm-title"></h2><pre id="confirm-detail" class="dialog-detail"></pre><div class="dialog-actions"><button value="cancel" class="secondary" autofocus>取消</button><button value="accept">确认继续</button></div></form></dialog>
+  <dialog id="input-dialog" class="small-dialog" aria-labelledby="input-title"><form method="dialog"><h2 id="input-title"></h2><label for="input-value">项目内的相对路径</label><input id="input-value" required maxlength="512" autocomplete="off" spellcheck="false"><p class="help">不会覆盖已有文件。不使用绝对路径或上级目录。</p><div class="dialog-actions"><button value="cancel" class="secondary" formnovalidate>取消</button><button value="accept">创建</button></div></form></dialog>
+  <dialog id="update-dialog" class="small-dialog" aria-labelledby="update-title"><div class="dialog-heading"><h2 id="update-title">软件更新</h2><button id="update-close" class="icon-button" aria-label="关闭软件更新">×</button></div><p id="update-version"></p><p id="update-message" role="status" aria-live="polite"></p><div class="button-row"><button id="update-check" disabled>检查更新</button><button id="update-releases" class="secondary" disabled>打开版本下载页</button></div></dialog>
+  <dialog id="about-dialog" class="small-dialog" aria-labelledby="about-title"><h2 id="about-title">关于与开源许可</h2><p>LatexStudio 是本地优先工作台，不是完整 AyakaLeaf 网页界面的移植。</p><p>LaTeX 环境补全与缩进模块复用 AyakaLeaf Pro pro-v6.3.2，遵循 GNU AGPL v3。Copyright (c) Overleaf, 2014–2025；Pro Authors, 2026–now。软件不提供任何担保，可按许可证复制、修改和再分发。</p><p>CodeMirror：MIT；PDF.js：Apache-2.0。完整许可与固定来源随源代码和发行包提供。修改版发行须同时提供对应源代码与构建说明。</p><details><summary>GNU AGPL v3 完整许可证（离线可读）</summary><pre id="license-text" class="license-text"></pre></details><details><summary>第三方来源、版权与再分发说明</summary><pre id="notices-text" class="license-text"></pre></details><form method="dialog"><button>关闭</button></form></dialog>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
