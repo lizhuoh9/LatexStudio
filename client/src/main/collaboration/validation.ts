@@ -1,19 +1,26 @@
+import { rememberOperationDiagnostic } from '../github/operation-diagnostic'
 import type { CloudAccount, CloudProject, DevicePrompt } from '../../shared/collaboration-contracts'
 
 export type Failure = 'cancelled' | 'timeout' | 'network' | 'response' | 'redirect' | 'unauthorized' |
-  'denied' | 'expired' | 'disabled' | 'limit' | 'signed-out' | 'selection'
+  'denied' | 'expired' | 'disabled' | 'limit' | 'signed-out' | 'selection' | 'forbidden' | 'create-forbidden' | 'invalid-repository'
 const messages: Record<Failure, string> = {
   cancelled: '操作已取消。', timeout: '云端请求超时，请重试。', network: '云端请求失败，请检查网络后重试。',
   response: '云端返回的信息无法安全使用，请重试。', redirect: '已拒绝云端请求重定向，请稍后重试。',
   unauthorized: '此设备的登录已失效，请重新登录。', denied: '你已取消云端授权。',
   expired: '授权或登录已过期，请重新登录。', disabled: '发布者尚未启用设备登录，请联系软件提供者。',
   limit: '云端项目数量或分页超过安全限额，未返回不完整列表，请联系软件提供者。',
+  forbidden: 'GitHub 拒绝此操作（403），请检查 App 权限、安装范围和账号策略。',
+  'create-forbidden': 'GitHub 拒绝创建仓库（403），请检查并批准 GitHub App 的仓库创建权限。',
+  'invalid-repository': 'GitHub 未接受仓库名称或创建参数（422），请检查是否已有同名仓库。',
   'signed-out': '请先登录云端账号。',
   selection: '项目选择已失效，请重新打开项目列表后再选择。'
 }
 
 export class CollaborationError extends Error {
-  constructor(readonly kind: Failure) { super(messages[kind]) }
+  constructor(readonly kind: Failure) {
+    super(messages[kind])
+    if (kind === 'unauthorized' || kind === 'forbidden' || kind === 'create-forbidden' || kind === 'invalid-repository' || kind === 'network' || kind === 'response') rememberOperationDiagnostic(this, kind)
+  }
 }
 export function failure(error: unknown): CollaborationError {
   return error instanceof CollaborationError ? error : new CollaborationError('network')

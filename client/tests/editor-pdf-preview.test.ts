@@ -1,0 +1,234 @@
+/// <reference lib="dom" />
+import { readFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+
+const api = vi.hoisted(() => ({ getDocument: vi.fn(), worker: { workerSrc: '' }, element: vi.fn(), text: vi.fn() }))
+vi.mock('pdfjs-dist', () => ({ getDocument: api.getDocument, GlobalWorkerOptions: api.worker }))
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'owned-fixture-worker' }))
+vi.mock('../src/renderer/dom', () => ({ element: api.element, text: api.text }))
+import { PdfPreview, PDF_PREVIEW_LIMITS } from '../src/renderer/pdf-view'
+
+type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void }
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void, reject!: (error: unknown) => void
+  const promise = new Promise<T>((accept, fail) => { resolve = accept; reject = fail })
+  return { promise, resolve, reject }
+}
+class NodeMock {
+  hidden = false; textContent = ''; className = ''; width = 0; height = 0
+  clientWidth = 640; clientHeight = 700; scrollTop = 0; scrollLeft = 0
+  style: Record<string, string> = {}; dataset: Record<string, string> = {}; attributes = new Map<string, string>()
+  children: NodeMock[] = []; handlers = new Map<string, Set<() => void>>()
+  classList = { add: (name: string) => { this.className += ` ${name}` } }
+  constructor(readonly tagName: string) {}
+  closest(): NodeMock | null { return scroller }
+  replaceChildren(...nodes: NodeMock[]): void { this.children = nodes }
+  setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
+  addEventListener(name: string, listener: () => void): void {
+    if (!this.handlers.has(name)) this.handlers.set(name, new Set())
+    this.handlers.get(name)!.add(listener)
+  }
+  removeEventListener(name: string, listener: () => void): void { this.handlers.get(name)?.delete(listener) }
+  emit(name: string): void { for (const listener of this.handlers.get(name) ?? []) listener() }
+  set innerHTML(_value: string) { throw new Error('PDF data must never become markup') }
+}
+let host: NodeMock, scroller: NodeMock, empty: NodeMock, position: NodeMock, browser: NodeMock
+let preview: PdfPreview | null, resizeCallback: (() => void) | undefined
+let surfaces: NodeMock[], notify: Mock<(message: string) => void>, disconnect: Mock<() => void>
+const flush = async (): Promise<void> => { for (let i = 0; i < 100; i++) await Promise.resolve() }
+function source(count = 12, width = 600, height = 800) {
+  const renderGates: Deferred<void>[] = [], pages = new Map<number, ReturnType<typeof createPage>>()
+  const tasks: { promise: Promise<void>; cancel: Mock<() => void> }[] = []
+  let concurrent = 0, peak = 0
+  function createPage(number: number) {
+    return { number, cleanup: vi.fn(), getViewport: vi.fn(({ scale }: { scale: number }) => ({ width: width * scale, height: height * scale })),
+      render: vi.fn(() => {
+        const gate = renderGates.shift(), promise = gate?.promise ?? Promise.resolve()
+        concurrent++; peak = Math.max(peak, concurrent)
+        void promise.then(() => { concurrent-- }, () => { concurrent-- })
+        const task = { promise, cancel: vi.fn(() => gate?.reject(new Error('canceled render'))) }
+        tasks.push(task); return task
+      }) }
+  }
+  const page = (number: number) => { if (!pages.has(number)) pages.set(number, createPage(number)); return pages.get(number)! }
+  const document = { numPages: count, getPage: vi.fn(async (number: number) => page(number)) }
+  const loading = { promise: Promise.resolve(document), destroy: vi.fn(async (): Promise<void> => {}) }
+  return { document, loading, page, pages, tasks, renderGates, peak: () => peak }
+}
+beforeEach(() => {
+  surfaces = []; preview = null; resizeCallback = undefined; notify = vi.fn(); disconnect = vi.fn()
+  host = new NodeMock('div'); scroller = new NodeMock('div'); empty = new NodeMock('div'); position = new NodeMock('span'); browser = new NodeMock('window')
+  const nodes = new Map([['pdf-pages', host], ['pdf-empty', empty], ['pdf-position', position]])
+  api.getDocument.mockReset(); api.element.mockImplementation((id: string) => nodes.get(id))
+  api.text.mockImplementation((id: string, value: string) => { if (id === 'pdf-position') position.textContent = value })
+  vi.stubGlobal('window', { document: { createElement: (tag: string) => { const node = new NodeMock(tag); if (tag === 'canvas') surfaces.push(node); return node } },
+    devicePixelRatio: 2, addEventListener: browser.addEventListener.bind(browser), removeEventListener: browser.removeEventListener.bind(browser) })
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resizeCallback = callback }
+    observe = vi.fn()
+    disconnect = disconnect
+  })
+})
+afterEach(async () => { await preview?.dispose().catch(() => undefined); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+async function open(count = 12) {
+  const pdf = source(count); api.getDocument.mockReturnValue(pdf.loading)
+  preview = new PdfPreview(notify); await preview.show(new Uint8Array([1, 2, 3]))
+  return pdf
+}
+const live = () => surfaces.filter(canvas => canvas.width > 0 && canvas.height > 0)
+const totalPixels = () => live().reduce((sum, canvas) => sum + canvas.width * canvas.height, 0)
+
+describe('continuous local canvas PDF preview', () => {
+  it('keeps a continuous stack of page shells while lazily rendering only nearby pages', async () => {
+    const pdf = await open(120)
+    expect(host.children).toHaveLength(120)
+    expect(host.children.map(node => node.dataset.pdfPage)).toEqual(Array.from({ length: 120 }, (_, i) => String(i + 1)))
+    expect(live().length).toBeGreaterThan(0); expect(live().length).toBeLessThanOrEqual(PDF_PREVIEW_LIMITS.canvases)
+    expect(pdf.document.getPage.mock.calls.length).toBeLessThan(10)
+    expect(host.children[0]?.attributes.get('aria-label')).toBe('PDF 第 1 页')
+    expect(position.textContent).toBe('1 / 120 · 100%'); expect(empty.hidden).toBe(true)
+  })
+  it('fills newly visible pages when the first landscape page changes the initial height estimate', async () => {
+    const pdf = source(40, 800, 300); api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    await preview.show(new Uint8Array([1]))
+    expect(host.children[3]?.children[0]?.tagName).toBe('canvas')
+    expect(live().length).toBeLessThanOrEqual(PDF_PREVIEW_LIMITS.canvases)
+    expect(pdf.document.getPage.mock.calls.length).toBeLessThan(10)
+  })
+  it('updates the current-page indicator on vertical scroll and releases old offscreen bitmaps', async () => {
+    const pdf = await open(120), old = [...live()]
+    const height = parseFloat(host.children[0]!.style.height!)
+    scroller.scrollTop = 24 + (height + 16) * 60; scroller.emit('scroll'); await flush()
+    expect(position.textContent).toContain('61 / 120')
+    expect(pdf.document.getPage.mock.calls.some(([number]) => number >= 60)).toBe(true)
+    expect(old.every(canvas => canvas.width === 0 && canvas.height === 0)).toBe(true)
+    expect(live().length).toBeLessThanOrEqual(PDF_PREVIEW_LIMITS.canvases)
+  })
+  it('page buttons scroll the existing stack rather than replacing it with a single page', async () => {
+    await open(8); const shells = [...host.children]
+    await preview!.move(1); expect(position.textContent).toContain('2 / 8'); expect(scroller.scrollTop).toBeGreaterThan(0)
+    await preview!.move(10000); expect(position.textContent).toContain('8 / 8')
+    await preview!.move(-10000); expect(position.textContent).toContain('1 / 8')
+    expect(host.children).toEqual(shells)
+  })
+  it('makes plus/minus zoom change actual page dimensions without compounding scroll-content width', async () => {
+    await open(8); const normal = parseFloat(host.children[0]!.style.width!)
+    await preview!.scale(.1); expect(parseFloat(host.children[0]!.style.width!)).toBeCloseTo(normal * 1.1)
+    expect(parseFloat(host.style.width!)).toBeGreaterThan(scroller.clientWidth)
+    await preview!.scale(.1); expect(parseFloat(host.children[0]!.style.width!)).toBeCloseTo(normal * 1.2)
+    await preview!.scale(-.2); expect(parseFloat(host.children[0]!.style.width!)).toBeCloseTo(normal)
+    expect(position.textContent).toContain('100%')
+    await preview!.scale(100); expect(position.textContent).toContain('200%')
+    await preview!.scale(-100); expect(position.textContent).toContain('50%')
+    await preview!.scale(Number.NaN); await preview!.move(Infinity); expect(position.textContent).toContain('50%')
+  })
+  it('observes divider/container resize and preserves the current page when refitting', async () => {
+    await open(20); await preview!.move(5); expect(position.textContent).toContain('6 / 20')
+    const old = [...live()], width = parseFloat(host.children[0]!.style.width!)
+    scroller.clientWidth = 400; resizeCallback?.(); await flush()
+    expect(parseFloat(host.children[0]!.style.width!)).toBeLessThan(width)
+    expect(position.textContent).toContain('6 / 20'); expect(old.every(canvas => canvas.width === 0)).toBe(true)
+    expect(live().length).toBeGreaterThan(0)
+  })
+  it('bounds canvas count and aggregate pixels across a large page count and huge display/zoom', async () => {
+    scroller.clientWidth = 14000; await open(PDF_PREVIEW_LIMITS.pages)
+    await preview!.scale(1)
+    for (const target of [40, 300, 900, 1500]) {
+      await preview!.move(target)
+      expect(live().length).toBeLessThanOrEqual(PDF_PREVIEW_LIMITS.canvases)
+      expect(totalPixels()).toBeLessThanOrEqual(PDF_PREVIEW_LIMITS.canvases * PDF_PREVIEW_LIMITS.pixelsPerCanvas)
+      expect(live().every(canvas => canvas.width <= PDF_PREVIEW_LIMITS.canvasEdge && canvas.height <= PDF_PREVIEW_LIMITS.canvasEdge)).toBe(true)
+    }
+  })
+  it('cancels an active render on zoom and serializes its replacement', async () => {
+    const pdf = source(8), gate = deferred<void>(); pdf.renderGates.push(gate)
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    const showing = preview.show(new Uint8Array([1])); await flush()
+    expect(pdf.tasks).toHaveLength(1)
+    await preview.scale(.1); await showing
+    expect(pdf.tasks[0]?.cancel).toHaveBeenCalled(); expect(pdf.peak()).toBe(1)
+    expect(position.textContent).toContain('110%'); expect(notify).not.toHaveBeenCalled()
+  })
+  it('clear cancels and drains active work, destroys the document owner and zeros all surfaces', async () => {
+    const pdf = source(8), gate = deferred<void>(); pdf.renderGates.push(gate)
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    const showing = preview.show(new Uint8Array([1])); await flush(); await preview.clear(); await showing
+    expect(pdf.tasks[0]?.cancel).toHaveBeenCalled(); expect(pdf.loading.destroy).toHaveBeenCalledOnce()
+    expect(live()).toHaveLength(0); expect(host.children).toHaveLength(0)
+    expect(empty.hidden).toBe(false); expect(position.textContent).toBe('尚未编译'); expect(notify).not.toHaveBeenCalled()
+  })
+  it('rejects late old getPage results without changing the replacement document', async () => {
+    const old = source(8), waiting = deferred<ReturnType<typeof old.page>>()
+    old.document.getPage.mockImplementationOnce(() => waiting.promise)
+    api.getDocument.mockReturnValueOnce(old.loading); preview = new PdfPreview(notify)
+    const oldShow = preview.show(new Uint8Array([1])); await flush()
+    const next = source(2); api.getDocument.mockReturnValue(next.loading)
+    await preview.show(new Uint8Array([2])); waiting.resolve(old.page(1)); await oldShow; await flush()
+    expect(host.children).toHaveLength(2); expect(position.textContent).toContain('1 / 2')
+    expect(old.page(1).cleanup).toHaveBeenCalled(); expect(notify).not.toHaveBeenCalled()
+  })
+  it('does not start a superseded load after asynchronous destruction finishes', async () => {
+    const old = source(2), destroy = deferred<void>(), load = deferred<typeof old.document>()
+    old.loading.promise = load.promise; old.loading.destroy.mockImplementation(() => destroy.promise)
+    api.getDocument.mockReturnValueOnce(old.loading); preview = new PdfPreview(notify)
+    const first = preview.show(new Uint8Array([1])); await flush()
+    const second = preview.show(new Uint8Array([2])); await flush(); expect(api.getDocument).toHaveBeenCalledOnce()
+    const clearing = preview.clear()
+    destroy.resolve(); load.resolve(old.document)
+    await Promise.all([first, second, clearing])
+    expect(api.getDocument).toHaveBeenCalledOnce(); expect(host.children).toHaveLength(0)
+    expect(position.textContent).toBe('尚未编译')
+  })
+  it('rejects oversized documents explicitly instead of allocating unbounded page shells', async () => {
+    const pdf = source(PDF_PREVIEW_LIMITS.pages + 1); api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    await expect(preview.show(new Uint8Array([1]))).rejects.toThrow('页数超出')
+    expect(host.children).toHaveLength(0); expect(pdf.document.getPage).not.toHaveBeenCalled()
+    expect(pdf.loading.destroy).toHaveBeenCalledOnce(); expect(notify).toHaveBeenCalledOnce()
+  })
+  it('reports a synchronous PDF.js loading failure without creating remote or fallback content', async () => {
+    api.getDocument.mockImplementation(() => { throw new Error('synthetic load failure') }); preview = new PdfPreview(notify)
+    await expect(preview.show(new Uint8Array([1]))).rejects.toThrow('synthetic load failure')
+    expect(notify).toHaveBeenCalledOnce(); expect(host.children).toHaveLength(0); expect(empty.hidden).toBe(false)
+  })
+  it('releases a failed active render instead of keeping a failed canvas surface', async () => {
+    const pdf = source(1), gate = deferred<void>(); pdf.renderGates.push(gate)
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    const showing = preview.show(new Uint8Array([1])); await flush()
+    const failure = expect(showing).rejects.toThrow('synthetic drawing failure')
+    gate.reject(new Error('synthetic drawing failure')); await failure
+    expect(live()).toHaveLength(0); expect(pdf.loading.destroy).toHaveBeenCalledOnce(); expect(notify).toHaveBeenCalledOnce()
+  })
+  it('rejects invalid page geometry and never allocates its bitmap', async () => {
+    const pdf = source(1); pdf.page(1).getViewport.mockReturnValue({ width: Infinity, height: 800 })
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    await expect(preview.show(new Uint8Array([1]))).rejects.toThrow('页面尺寸无效')
+    expect(surfaces).toHaveLength(0); expect(notify).toHaveBeenCalledOnce()
+  })
+  it('makes repeated dispose calls wait for the same outstanding document destruction', async () => {
+    const pdf = await open(2), destroy = deferred<void>()
+    pdf.loading.destroy.mockImplementation(() => destroy.promise)
+    const first = preview!.dispose(); let secondFinished = false
+    const second = preview!.dispose().then(() => { secondFinished = true })
+    await flush(); expect(secondFinished).toBe(false)
+    destroy.resolve(); await Promise.all([first, second])
+    expect(secondFinished).toBe(true); expect(pdf.loading.destroy).toHaveBeenCalledOnce()
+  })
+  it('disconnects observers/listeners and ignores resize/scroll/show after disposal', async () => {
+    const pdf = await open(6), calls = pdf.document.getPage.mock.calls.length
+    await preview!.dispose(); scroller.emit('scroll'); browser.emit('resize'); resizeCallback?.()
+    await preview!.show(new Uint8Array([9])); await preview!.scale(.1); await flush()
+    expect(disconnect).toHaveBeenCalledOnce(); expect(scroller.handlers.get('scroll')?.size).toBe(0)
+    expect(browser.handlers.get('resize')?.size).toBe(0); expect(pdf.document.getPage).toHaveBeenCalledTimes(calls)
+    expect(host.children).toHaveLength(0); expect(live()).toHaveLength(0)
+  })
+  it('passes local copied bytes and eval/fetch restrictions, with no document scripting or annotation layers', async () => {
+    const pdf = source(1), bytes = new Uint8Array([3, 4]); api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify)
+    await preview.show(bytes)
+    const options = api.getDocument.mock.calls[0]?.[0]
+    expect(options.data).not.toBe(bytes); expect(options.data).toEqual(bytes)
+    expect(options).toMatchObject({ isEvalSupported: false, disableAutoFetch: true, disableStream: true })
+    expect(options).not.toHaveProperty('url')
+    expect(host.children.every(node => node.tagName === 'div' && node.children.every(child => child.tagName === 'canvas'))).toBe(true)
+    expect(readFileSync('src/renderer/pdf-preview-style.css', 'utf8')).not.toMatch(/@import|@font-face|url\(/)
+  })
+})

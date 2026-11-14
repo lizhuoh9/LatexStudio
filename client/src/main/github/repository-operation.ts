@@ -1,4 +1,5 @@
 import { checkedToken, githubTarget, GitHubError, type GitHubTarget } from './remote-policy'
+import { readOperationDiagnostic, rememberOperationDiagnostic, operationDiagnosticMessage, type OperationDiagnostic } from './operation-diagnostic'
 import { readVerificationLifecycleFailure } from './verification-lifecycle'
 import type { GitHubSettings } from '../../shared/workspace-contracts'
 
@@ -40,8 +41,9 @@ export function readRepositoryOperationFailure(error: unknown): Readonly<Reposit
 export class RepositoryOperationError extends GitHubError {
   readonly flags: Readonly<RepositoryOperationFailure>
 
-  constructor(flags: RepositoryOperationFailure, invalidOptions = false) {
-    super(failureMessage(flags, invalidOptions))
+  constructor(flags: RepositoryOperationFailure, invalidOptions = false, diagnostic?: OperationDiagnostic) {
+    super(failureMessage(flags, invalidOptions, diagnostic))
+    if (diagnostic) rememberOperationDiagnostic(this, diagnostic)
     this.name = 'RepositoryOperationError'
     this.flags = Object.freeze({ ...flags })
     Object.freeze(this)
@@ -55,10 +57,10 @@ export class RepositoryOperationError extends GitHubError {
   get remoteWriteMayHaveCompleted(): boolean { return this.flags.remoteWriteMayHaveCompleted }
 }
 
-function failureMessage(flags: RepositoryOperationFailure, invalidOptions: boolean): string {
+function failureMessage(flags: RepositoryOperationFailure, invalidOptions: boolean, diagnostic?: OperationDiagnostic): string {
   let message = invalidOptions ? '仓库操作参数无效：请核对 GitHub 地址、凭据、真实取消信号及不超过 120 秒的正整数时限。' :
     flags.timedOut ? '仓库操作超过合作时限。' : flags.cancelled ? '仓库操作已取消。' :
-      flags.operationFailed ? '仓库操作未完成；未显示敏感错误信息。' : '仓库操作清理失败。'
+      flags.operationFailed ? diagnostic ? operationDiagnosticMessage(diagnostic) : '仓库操作未完成；未显示敏感错误信息。' : '仓库操作清理失败。'
   if (flags.cleanupFailed) message += ' 网络客户端清理未确认完成。'
   if (flags.localChangesMayExist) message += ' 可能已保留部分本地对象、文件、关联或快照，请检查本地状态。'
   if (flags.remoteWriteMayHaveCompleted) message += ' 远端上传可能已被接收；请先核对远端，不要自动重试或回滚。'
@@ -200,12 +202,13 @@ export async function withRepositoryOperation<T>(options: RepositoryOperationOpt
   const scope = new Scope(snapshotRepositoryOperationOptions(options))
   let value!: T
   let failed = false
+  let diagnostic: OperationDiagnostic | undefined
   try { scope.check(); value = await action(scope); scope.check() }
-  catch (error) { scope.captureKnownCleanup(error); failed = true }
+  catch (error) { scope.captureKnownCleanup(error); diagnostic = readOperationDiagnostic(error); failed = true }
   await scope.finish()
   const flags = scope.outcome(failed)
   if (flags.operationFailed || flags.cleanupFailed) {
-    const error = new RepositoryOperationError(flags)
+    const error = new RepositoryOperationError(flags, false, diagnostic)
     rememberFailure(error, Object.freeze({ ...flags }))
     throw error
   }

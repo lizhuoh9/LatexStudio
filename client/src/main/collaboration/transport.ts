@@ -1,4 +1,5 @@
 import { active, CollaborationError, integer, login } from './validation'
+import { readOperationDiagnostic } from '../github/operation-diagnostic'
 import { githubTarget } from '../github/remote-policy'
 import { readRepositoryOperationFailure, withRepositoryOperation } from '../github/repository-operation'
 import { readVerificationLifecycleFailure } from '../github/verification-lifecycle'
@@ -141,9 +142,12 @@ export class CollaborationTransport {
         throw new CollaborationError('unauthorized')
       }
       if (!response.ok || statuses && !statuses.includes(response.status)) {
-        if (statuses) await ownedResponse(controller.signal, async () => { throw new CollaborationError('network') }, async () => response.body?.cancel())
+        // Classify the status, never reflect the untrusted response body/headers.
+        const kind = response.status === 403 ? url === `${apiRoot}/user/repos` ? 'create-forbidden' : 'forbidden'
+          : response.status === 422 && url === `${apiRoot}/user/repos` ? 'invalid-repository' : 'network'
+        if (statuses) await ownedResponse(controller.signal, async () => { throw new CollaborationError(kind) }, async () => response.body?.cancel())
         void response.body?.cancel().catch(() => undefined)
-        throw new CollaborationError('network')
+        throw new CollaborationError(kind)
       }
       if (response.status === 204 && statuses?.includes(204)) return await ownedResponse(controller.signal, async () => null, async () => response.body?.cancel())
       return await jsonBody(response, controller.signal, statuses !== undefined)
@@ -151,6 +155,8 @@ export class CollaborationTransport {
       if (readRepositoryOperationFailure(error)?.cleanupFailed || readVerificationLifecycleFailure(error)?.cleanupFailed) throw error
       active(parent)
       if (timedOut) throw new CollaborationError('timeout')
+      const diagnostic = readOperationDiagnostic(error)
+      if (diagnostic) throw new CollaborationError(diagnostic)
       throw error instanceof CollaborationError ? error : new CollaborationError('network')
     } finally { clearTimeout(timer); parent.removeEventListener('abort', cancel) }
   }

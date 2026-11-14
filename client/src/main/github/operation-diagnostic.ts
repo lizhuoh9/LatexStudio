@@ -1,0 +1,16 @@
+/** Closed local codes only. Provider bodies, causes, tokens and URLs are never displayed. */
+export type OperationDiagnostic = 'unauthorized' | 'forbidden' | 'create-forbidden' | 'invalid-repository' | 'network' | 'response'
+const codes = new WeakMap<object, OperationDiagnostic>()
+const messages: Record<OperationDiagnostic, string> = {
+  unauthorized: 'GitHub 登录已失效，请重新登录后核对远端状态。',
+  forbidden: 'GitHub 拒绝访问（403）。请检查 App 的安装范围、已批准权限和账号策略；限流也可能导致此响应。',
+  'create-forbidden': 'GitHub 拒绝创建仓库（403）。请在 GitHub App 设置中检查 Administration 或 Repository creation 写权限，批准新增权限并重新登录；账号策略或限流也可能阻止创建。',
+  'invalid-repository': 'GitHub 未接受仓库名称或创建参数（422）。请先核对账号下是否已有同名仓库，并检查名称和账号仓库限制。',
+  network: 'GitHub 请求或响应未完成，请检查网络；若已提交创建请求，请先核对 GitHub 上是否已有仓库。',
+  response: 'GitHub 返回的信息未通过验证。若已提交创建请求，请先核对远端仓库，不要重复创建。'
+}
+export function rememberOperationDiagnostic(error: object, code: OperationDiagnostic): void { codes.set(error, code) }
+export function readOperationDiagnostic(error: unknown): OperationDiagnostic | undefined {
+  return error !== null && (typeof error === 'object' || typeof error === 'function') ? codes.get(error) : undefined
+}
+export function operationDiagnosticMessage(code: OperationDiagnostic): string { return messages[code] }

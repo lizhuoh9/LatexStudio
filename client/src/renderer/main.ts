@@ -9,6 +9,7 @@ import './version-panel-style.css'
 import './file-outline-style.css'
 import './workspace-layout-style.css'
 import { WorkbenchLayout } from './workbench-layout'
+import { WorkspaceSplitter } from './workspace-splitter'
 import { FileOutline } from './file-outline'
 import { AccountMenu } from './account-menu'
 import type { ProjectLibraryApi } from '../shared/project-library-contracts'
@@ -54,6 +55,7 @@ class Workbench {
   private account: AccountMenu | null = null
   private sync: SyncPanel
   private layout: WorkbenchLayout
+  private splitter: WorkspaceSplitter
   private outline: FileOutline | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   private cloud: CloudProjectPanel
@@ -72,6 +74,7 @@ class Workbench {
       () => this.run('保存文件', async () => { await this.documents.save() }))
     this.outline = new FileOutline(element('file-outline'), line => this.editor.revealLine(line))
     this.layout = new WorkbenchLayout(() => this.showHome())
+    this.splitter = new WorkspaceSplitter()
     this.pdf = new PdfPreview((message) => this.notify(message))
     this.documents = new Documents(api, {
       show: (content, readOnly) => this.editor.show(content, readOnly),
@@ -106,6 +109,8 @@ class Workbench {
     window.addEventListener('unload', () => {
       this.startup?.dispose()
       this.layout.dispose()
+      this.splitter.dispose()
+      void this.pdf.dispose().catch(() => undefined)
       this.outline?.dispose()
       this.account?.dispose()
       if (this.noticeTimer !== null) clearTimeout(this.noticeTimer)
@@ -369,6 +374,7 @@ class Workbench {
     this.sync.setClosing(closing)
     this.startup?.setClosing(closing)
     this.layout.setClosing(closing)
+    this.splitter.setClosing(closing)
     this.outline?.setClosing(closing)
     this.cloud.setClosing(closing)
     this.library.setClosing(closing)

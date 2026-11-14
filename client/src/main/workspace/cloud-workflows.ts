@@ -65,7 +65,7 @@ export class WorkspaceCloud implements CloudApi {
       if (created.private !== true) throw new Error('无法确认仓库为私有；未关联或上传本地论文，请核对远端。')
       const project = { id: created.id, owner: created.owner, name: created.name, private: true as const }
       if (!created.accessible) return { project, connected: false,
-        message: '私有仓库已创建，但尚未授予本 GitHub App 访问权限。请在 GitHub 安装设置中授权此仓库，再刷新项目并关联；不要重复创建。' }
+        message: '私有仓库已创建，但尚未确认本 GitHub App 可访问此仓库。请检查网络及 GitHub 安装设置中的授权范围，再刷新项目并关联；不要重复创建。' }
       const selections = await this.account.projectSelections()
       const selected = selections.find(value => value.project.id === created.id && value.project.private)
       if (!selected) return { project, connected: false, message: '私有仓库已创建，授权发现尚未就绪；请刷新项目列表后关联，不要重复创建。' }

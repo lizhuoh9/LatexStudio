@@ -142,7 +142,7 @@ export class CloudProjectPanel {
         if (mutation && !await this.saved(ticket)) return
         if (this.valid(ticket)) await action()
       } catch (error) {
-        if (this.valid(ticket)) this.message(`操作未完成：${readableError(error)} 请检查登录、项目权限与网络后明确重试。`)
+        if (this.valid(ticket)) this.message(`操作未完成：${readableError(error)}`)
       } finally { this.busy = false; if (!this.disposed) this.controls() }
     }, true)
   }

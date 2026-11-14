@@ -42,7 +42,8 @@ describe('user-selected Overleaf home/editor layout retains real application con
   it('keeps code in the middle and PDF to its right, with history inline after PDF', () => {
     expect(editor.indexOf('id="editor-panel"')).toBeLessThan(editor.indexOf('aria-label="PDF 预览"'))
     expect(editor.indexOf('id="revision-panel"')).toBeGreaterThan(editor.indexOf('aria-label="PDF 预览"'))
-    expect(tag('revision-list')).toContain('<ol'); expect(layout).toContain('minmax(200px,1.15fr) minmax(200px,1fr)')
+    expect(tag('revision-list')).toContain('<ol'); expect(layout).toContain('minmax(180px,var(--source-track,1.15fr)) minmax(180px,var(--preview-track,1fr))')
+    expect(tag('source-preview-splitter')).toContain('role="separator"'); expect(tag('source-preview-splitter')).toContain('tabindex="0"')
     expect(html.slice(html.indexOf('id="cloud-dialog"'), html.indexOf('id="project-dialog"'))).not.toContain('id="revision-list"')
   })
   it('places compile controls over PDF and preserves actual editable compiler settings', () => {

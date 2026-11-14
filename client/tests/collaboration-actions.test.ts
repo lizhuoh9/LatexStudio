@@ -91,6 +91,20 @@ it('creates only a private empty repository and returns a token-free installatio
   expect(fetcher.mock.calls.filter(([, value]) => ['POST', 'PUT', 'PATCH'].includes(value?.method ?? '')).map(([url]) => String(url)))
     .toEqual(['https://github.com/login/device/code', 'https://github.com/login/oauth/access_token', 'https://api.github.com/user/repos'])
 })
+it.each([[403, '403'], [422, '422'], [503, '网络']])('preserves safe create status %s through nested operation cleanup without provider text', async (status, expected) => {
+  const { service, fetcher } = await signedIn((url, init) => url.pathname === '/user/repos' && init?.method === 'POST'
+    ? json({ message: `untrusted ${token} https://evil.invalid/secret` }, Number(status)) : undefined)
+  const error = await caught(service.createPrivateProject('paper'))
+  expect(String(error)).toContain(expected)
+  expect(String(error)).not.toMatch(/untrusted|fixture_only|evil\.invalid/)
+  expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
+  expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith('/user/repos') && init?.method === 'POST')).toHaveLength(1)
+})
+it.each([403, 503])('keeps confirmed private creation as inaccessible when installation check fails with %s', async status => {
+  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? json({ message: token }, status) : undefined)
+  expect(await service.createPrivateProject('paper')).toEqual({ id: 42, owner: 'lab-user', name: 'paper', private: true, accessible: false })
+  expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith('/user/repos') && init?.method === 'POST')).toHaveLength(1)
+})
 it.each([false, undefined, 'true'])('does not discover, associate, upload or patch visibility when create private is %s', async value => {
   const { service, server, fetcher } = await signedIn(); server.created = { ...repository, private: value }
   const error = await caught(service.createPrivateProject('paper'))

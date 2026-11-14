@@ -1,5 +1,6 @@
 import type { CloudAccount, CloudProject } from '../../shared/collaboration-contracts'
-import type { RepositoryOperationScope } from '../github/repository-operation'
+import { readRepositoryOperationFailure, type RepositoryOperationScope } from '../github/repository-operation'
+import { readOperationDiagnostic } from '../github/operation-diagnostic'
 import { account, CollaborationError, integer, record } from './validation'
 import type { CollaborationTransport } from './transport'
 import { discoverProjects } from './projects'
@@ -43,7 +44,15 @@ export async function createPrivateProject(context: ProjectActionContext, scope:
   const value = privateRepository(response)
   if (value.owner !== context.account.login || value.name !== name) throw new CollaborationError('response')
   // Never patch visibility or attach/upload if GitHub did not attest private:true.
-  return availability(context, scope, value)
+  try { return await availability(context, scope, value) }
+  catch (error) {
+    // A validated private:true POST already succeeded. An unavailable installation
+    // listing must not invite a duplicate POST; no access or upload is granted.
+    context.check(); scope.check()
+    const code = readOperationDiagnostic(error)
+    if (readRepositoryOperationFailure(error)?.cleanupFailed || !['network', 'forbidden'].includes(code ?? '')) throw error
+    return { ...value, accessible: false }
+  }
 }
 export async function listInvitations(context: ProjectActionContext, scope: RepositoryOperationScope): Promise<PendingInvitation[]> {
   const result: PendingInvitation[] = [], seen = new Set<number>()
