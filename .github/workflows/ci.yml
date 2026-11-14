@@ -19,6 +19,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - name: Canonical temporary directory (keep no-link checks intact)
+        shell: bash
+        run: node -e 'const f=require("node:fs"),p=f.realpathSync(process.env.RUNNER_TEMP);f.appendFileSync(process.env.GITHUB_ENV,["TEMP="+p,"TMP="+p,"TMPDIR="+p,""].join("\n"))'
       - run: npm ci
       - run: npm run audit:source
       - run: npm run typecheck

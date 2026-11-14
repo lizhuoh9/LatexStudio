@@ -25,6 +25,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - name: Canonical temporary directory (keep no-link checks intact)
+        shell: bash
+        run: node -e 'const f=require("node:fs"),p=f.realpathSync(process.env.RUNNER_TEMP);f.appendFileSync(process.env.GITHUB_ENV,["TEMP="+p,"TMP="+p,"TMPDIR="+p,""].join("\n"))'
       - run: npm ci
       - name: Require exact package/tag version
         run: node -e "if(process.env.GITHUB_REF_NAME !== 'v'+require('./package.json').version) process.exit(1)"
@@ -70,7 +73,7 @@ jobs:
         shell: bash
         run: |
           git archive --format=zip --output="downloads/LatexStudio-${GITHUB_REF_NAME}-source.zip" HEAD
-          (cd downloads && sha256sum *.exe *.zip *.yml *.blockmap > SHA256SUMS)
+          (cd downloads; shopt -s nullglob; files=(*.exe *.zip *.yml *.blockmap); sha256sum -- "${files[@]}" > SHA256SUMS)
       - name: Publish immutable version (no silent replacement)
         env:
           GH_TOKEN: ${{ github.token }}
