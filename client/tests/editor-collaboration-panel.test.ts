@@ -72,6 +72,16 @@ describe('initialization performs status only, never authorization or project di
     expect(api.status).toHaveBeenCalledOnce(); expect(api.onState).toHaveBeenCalledOnce()
     expect(api.startLogin).not.toHaveBeenCalled(); expect(api.openVerification).not.toHaveBeenCalled(); expect(api.projects).not.toHaveBeenCalled()
   })
+  it('renders a Main-verified retained account instead of misreporting missing login configuration', async () => {
+    vi.mocked(api.status).mockResolvedValue({ ...signedIn(), sessionOnly: false })
+    const panel = create(); await settle()
+    expect(panel.model.account?.login).toBe('fixture-user')
+    expect(dom.get('collaboration-state').textContent).toBe('fixture-user')
+    expect(dom.get('collaboration-logout').hidden).toBe(false)
+    expect(dom.get('collaboration-state').textContent).not.toContain('未配置')
+    expect(api.startLogin).not.toHaveBeenCalled(); expect(api.openVerification).not.toHaveBeenCalled()
+    expect(api.projects).not.toHaveBeenCalled()
+  })
   it('makes an unconfigured publisher visibly unavailable rather than pretending to log in', async () => {
     vi.mocked(api.status).mockResolvedValue(state({ phase: 'unconfigured' }))
     create(); await settle(); await click('login')

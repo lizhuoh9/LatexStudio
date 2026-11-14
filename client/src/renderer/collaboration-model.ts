@@ -186,7 +186,8 @@ export class CollaborationModel {
   }
 
   private applyState(state: CollaborationState, at: number, recover = false): void {
-    if (state.sessionOnly !== true) state = { phase: 'unconfigured', message: '本版仅支持当前运行会话，登录桥接状态不匹配。',
+    // Both memory-only and OS-encrypted sessions are valid; this flag is not an authorization grant.
+    if (typeof state.sessionOnly !== 'boolean') state = { phase: 'unconfigured', message: '登录桥接状态无效，请更新应用后重试。',
       account: null, authorization: null, expiresAt: null, sessionOnly: true }
     if (this.denySignIn && !recover && (state.phase === 'signed-in' || state.phase === 'authorizing')) return
     if (state.phase !== 'signed-in' && state.phase !== 'authorizing') this.reconcileAfter = null

@@ -89,10 +89,16 @@ describe('startup login or offline choice', () => {
     model.receive(signedIn()); create().open(); expect(modal().showModal).not.toHaveBeenCalled()
     expect(login).not.toHaveBeenCalled()
   })
-  it('dismisses if an existing session arrives while the choice is open', () => {
-    create().open(); model.receive(signedIn()); dialog.update(); dialog.open()
+  it.each([true, false])('dismisses if a verified existing session arrives while open (sessionOnly=%s)', sessionOnly => {
+    create().open(); model.receive({ ...signedIn(), sessionOnly }); dialog.update(); dialog.open()
     expect(modal().open).toBe(false); expect(modal().returnValue).toBe('signed-in')
     expect(modal().showModal).toHaveBeenCalledOnce(); expect(login).not.toHaveBeenCalled()
+  })
+  it('does not show login-unconfigured or disable login for a valid retained-session bridge', () => {
+    model.receive(state({ sessionOnly: false })); create().open()
+    expect(dom.get('startup-login').disabled).toBe(false)
+    expect(dom.get('startup-status').textContent).toBe(''); expect(dom.get('startup-status').hidden).toBe(true)
+    expect(login).not.toHaveBeenCalled()
   })
   it('freezes both choices and Escape during close handshake, then restores on cancellation', () => {
     model.receive(state()); create().open(); dialog.setClosing(true)

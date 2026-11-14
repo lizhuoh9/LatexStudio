@@ -83,6 +83,12 @@ describe('user-selected Overleaf home/editor layout retains real application con
     expect(html).toContain('data-ui-theme="overleaf"'); expect(topbar).toContain('LatexStudio'); expect(html).not.toContain('PaperStudio')
     expect(html).not.toContain('SPRINGER'); expect(layout).toContain('user-supplied Overleaf screenshots')
   })
+  it('keeps the home open button readable on hover and keyboard focus', () => {
+    expect(layout).toContain('.dashboard-actions #project-open:is(:hover, :focus-visible):not(:disabled) { background: #41516a; color: #ffffff;')
+    expect(layout).toContain('#project-open:focus-visible:not(:disabled) { outline: 2px solid #a5dfbd; outline-offset: 3px;')
+    expect(contrast('#ffffff', '#41516a')).toBeGreaterThanOrEqual(4.5)
+    expect(contrast('#a5dfbd', '#303c4e')).toBeGreaterThanOrEqual(3)
+  })
   it('matches the reference dark frame, white editor and restrained green actions', () => {
     expect(layout).toContain('--nav-bg: #1c232d'); expect(layout).toContain('--frame-bg: #303c4e')
     expect(layout).toContain('background: #087f43'); expect(base).toContain('.editor-panel { background: var(--surface-paper);')

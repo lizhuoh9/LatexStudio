@@ -38,6 +38,8 @@ body[data-ui-theme="overleaf"] #project-library-list, body[data-ui-theme="overle
 .dashboard-actions button { min-height: 34px; border-radius: 20px; padding: 6px 15px; }
 .dashboard-actions #project-create { background: #087f43; color: #fff; }
 .dashboard-actions #project-open { background: transparent; border: 1px solid #68778e; color: var(--nav-text); }
+body[data-ui-theme="overleaf"] .dashboard-actions #project-open:is(:hover, :focus-visible):not(:disabled) { background: #41516a; color: #ffffff; border-color: #8d9bb0; }
+body[data-ui-theme="overleaf"] .dashboard-actions #project-open:focus-visible:not(:disabled) { outline: 2px solid #a5dfbd; outline-offset: 3px; }
 .editor-workspace { display: grid; grid-template-rows: minmax(0,1fr); min-width: 0; min-height: 0; overflow: hidden; }
 body[data-ui-theme="overleaf"] .workspace:has(#log-panel:not([hidden])) { grid-template-rows: minmax(0,1fr) 170px; }
 body[data-ui-theme="overleaf"] .workspace { grid-template-columns: var(--file-tree-width) minmax(200px,1.15fr) minmax(200px,1fr); grid-template-rows: minmax(0,1fr) 0; grid-template-areas: "files source preview" "files logs logs"; min-width: 0; overflow: hidden; }

@@ -35,9 +35,9 @@ describe('optional collaboration bridge fails closed', () => {
     model.receive(signedIn()); expect(model.account?.id).toBe(7)
     expect(model.projects).toEqual([]); expect(model.allowed('projects')).toBe(true)
   })
-  it('rejects an incomplete signed-in account and a non-session-only bridge', () => {
+  it('rejects an incomplete signed-in account and a malformed session-retention flag', () => {
     model.receive(state({ phase: 'signed-in' })); expect(model.account).toBeNull()
-    model.receive({ ...signedIn(), sessionOnly: false } as unknown as CollaborationState)
+    model.receive({ ...signedIn(), sessionOnly: 'false' } as unknown as CollaborationState)
     expect(model.account).toBeNull(); expect(model.allowed('login')).toBe(false)
   })
 })
@@ -57,8 +57,40 @@ describe('recoverable Main errors require an explicit new login', () => {
   it('does not enable an unavailable or incompatible bridge from an error snapshot', () => {
     const absent = new CollaborationModel(false, () => now)
     absent.receive(state({ phase: 'error' })); expect(absent.allowed('login')).toBe(false)
-    model.receive({ ...state({ phase: 'error' }), sessionOnly: false } as unknown as CollaborationState)
+    model.receive({ ...state({ phase: 'error' }), sessionOnly: undefined } as unknown as CollaborationState)
     expect(model.state?.phase).toBe('unconfigured'); expect(model.allowed('login')).toBe(false)
+  })
+})
+
+describe('OS-encrypted session snapshots from Main', () => {
+  it.each([true, false])('accepts verified accounts with sessionOnly=%s without discovering projects', sessionOnly => {
+    model.receive({ ...signedIn(), sessionOnly })
+    expect(model.state?.phase).toBe('signed-in'); expect(model.account).toEqual(account)
+    expect(model.allowed('login')).toBe(false); expect(model.allowed('logout')).toBe(true)
+    expect(model.allowed('projects')).toBe(true); expect(model.projects).toEqual([])
+  })
+  it('does not disable an explicit login solely because Main supports retained sessions', () => {
+    model.receive(state({ sessionOnly: false }))
+    expect(model.state?.phase).toBe('signed-out'); expect(model.allowed('login')).toBe(true)
+  })
+  it.each([undefined, null, 'true', 'false', 0, 1, {}])('rejects malformed retention flags (%j)', sessionOnly => {
+    model.receive({ ...signedIn(), sessionOnly } as unknown as CollaborationState)
+    expect(model.state?.phase).toBe('unconfigured'); expect(model.account).toBeNull()
+    expect(model.allowed('login')).toBe(false); expect(model.allowed('projects')).toBe(false)
+  })
+  it('keeps expiry checks for a restored account', () => {
+    model.receive({ ...signedIn(), sessionOnly: false }); now = 100001; model.tick()
+    expect(model.expired).toBe(true); expect(model.account).toBeNull()
+    expect(model.allowed('login')).toBe(true); expect(model.allowed('projects')).toBe(false)
+  })
+  it('does not let a retained snapshot revive an explicitly logged-out session', () => {
+    const saved = { ...signedIn(), sessionOnly: false }
+    model.receive(saved); const logout = model.begin('logout')!
+    expect(logout).not.toBeNull(); model.receive(saved)
+    expect(model.account).toBeNull(); expect(model.respond(state(), logout)).toBe(true)
+    model.finish('logout', logout); model.receive(saved)
+    expect(model.account).toBeNull(); expect(model.allowed('login')).toBe(true)
+    expect(model.allowed('projects')).toBe(false)
   })
 })
 
