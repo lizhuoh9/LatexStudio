@@ -108,7 +108,7 @@ describe('shared file versions and bounded text-only comparisons', () => {
   it('explains missing before content and truncates large diffs/previews', () => {
     expect(versionPreview(null)).toContain('此前不存在')
     const result = compareVersions(null, 'new line')
-    expect(result.text).toContain('＋ new line'); expect(result.summary).toContain('此前不存在')
+    expect(result.text).toBe(''); expect(result.summary).toContain('初始记录')
     const large = compareVersions('a\n'.repeat(5000), 'b'.repeat(100000))
     expect(large.summary).toContain('不是完整差异'); expect(large.text.length).toBeLessThan(125000)
     expect(versionPreview('x'.repeat(100000)).length).toBeLessThan(60100)
@@ -117,6 +117,24 @@ describe('shared file versions and bounded text-only comparisons', () => {
     const result = compareVersions('a\nb\nc', 'a\nnew\nb\nc')
     expect(result.text).toContain('＋ new'); expect(result.text).toContain('  b')
     expect(result.summary).toContain('新增 1 行、移除 0 行')
+  })
+  it('shows only changed hunks with line coordinates and two unchanged context lines', () => {
+    const lines = Array.from({ length: 500 }, (_, i) => 'unchanged-' + (i + 1))
+    const next = [...lines]; next[100] = 'first edit'; next[400] = 'second edit'
+    const diff = compareVersions(lines.join('\n'), next.join('\n'))
+    expect(diff.text).toContain('− unchanged-101'); expect(diff.text).toContain('＋ first edit')
+    expect(diff.text).toContain('＋ second edit'); expect(diff.text).toContain('修改前第 99 行')
+    expect(diff.text).not.toContain('unchanged-250'); expect(diff.text).not.toContain('unchanged-1\n')
+    expect(diff.text.split('\n').length).toBeLessThan(20)
+    expect(compareVersions(lines.join('\n'), lines.join('\n')).text).toBe('')
+    expect(compareVersions('', 'added to existing empty file').text).toContain('＋ added')
+  })
+  it('summarizes an initial snapshot without automatically showing its entire document', async () => {
+    detail.before = null; detail.after = 'whole document\n'.repeat(408); await select()
+    expect(dom.get('revision-diff').textContent).toBe(''); expect(dom.get('revision-diff').hidden).toBe(true)
+    expect(dom.get('revision-diff-summary').textContent).toContain('初始记录')
+    expect(dom.get('revision-after').textContent).toBe(detail.after)
+    expect(dom.get('revision-full')).toHaveProperty('open', false)
   })
   it('clears selected contents on explicit refresh and limits the rendered list', async () => {
     await select()

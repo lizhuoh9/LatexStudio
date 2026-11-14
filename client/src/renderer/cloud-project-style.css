@@ -9,7 +9,14 @@
 #cloud-project-workspace #cp-create, #cloud-project-workspace #cp-sync { background: var(--accent, #2563eb); border: 1px solid var(--accent, #2563eb); color: #fff; }
 #cloud-project-workspace #cp-auto[aria-pressed="true"] { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); }
 #cloud-project-workspace .cp-note { font-size: 12px; line-height: 1.6; color: var(--muted, #64748b); }
-#cloud-project-workspace #cp-message { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+#cloud-project-workspace #cp-message { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+#cloud-project-workspace #cp-error[hidden] { display: none; }
+#cloud-project-workspace #cp-error { min-width: 0; padding: 12px; border: 1px solid #c17161; border-radius: 6px; background: #fff6f2; color: #5c241d; }
+#cloud-project-workspace #cp-error h4 { margin: 0; font-size: 13px; }
+#cloud-project-workspace .cp-error-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#cloud-project-workspace #cp-error-detail { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 180px; max-height: 45vh; margin-top: 10px; padding: 10px; resize: vertical; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 var(--font-ui, sans-serif); color: #342c28; background: #fff; border: 1px solid #b7a7a2; border-radius: 4px; user-select: text; }
+#cloud-project-workspace #cp-error-copy-status { margin-top: 6px; font-size: 12px; }
+#cloud-project-workspace #cp-error:focus-visible, #cloud-project-workspace #cp-error-detail:focus-visible { outline: 2px solid #ad543e; outline-offset: 2px; }
 #cloud-project-workspace #cp-status { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
 #cloud-project-workspace ul { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
 #cloud-project-workspace li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 9px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; overflow-wrap: anywhere; }

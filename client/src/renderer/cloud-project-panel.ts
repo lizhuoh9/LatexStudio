@@ -11,6 +11,13 @@ const TEMPLATE = `
   <header><h3>当前论文同步</h3><button id="cp-refresh" type="button">刷新</button></header>
   <p id="cp-status" role="status" aria-live="polite"></p>
   <p id="cp-message" role="status" aria-live="polite"></p>
+  <section id="cp-error" role="region" aria-labelledby="cp-error-title" tabindex="-1" hidden>
+    <header><h4 id="cp-error-title">操作失败详情</h4><div class="cp-error-actions">
+      <button id="cp-error-copy" type="button">复制详情</button><button id="cp-error-dismiss" type="button">关闭详情</button>
+    </div></header>
+    <textarea id="cp-error-detail" aria-label="完整错误详情" rows="8" readonly spellcheck="false" wrap="soft"></textarea>
+    <p id="cp-error-copy-status" role="status" aria-live="polite"></p>
+  </section>
   <button id="cp-authorization" type="button">管理 GitHub 项目授权</button>
   <details class="cp-group"><summary>创建或加入合作项目</summary>
   <div class="cp-row"><label>项目名称 <input id="cp-name" placeholder="my-paper（字母、数字、短横线）" maxlength="100"></label>
@@ -64,6 +71,9 @@ export class CloudProjectPanel {
     this.bindSync(element<HTMLButtonElement>('cp-sync'))
     this.bindSync(element<HTMLButtonElement>('project-sync'))
     this.bind('auto', () => this.auto(), true)
+    this.listen(element('cp-error-copy'), () => { void this.copyError() })
+    this.listen(element('cp-error-dismiss'), () => { if (!this.closing && !this.disposed) this.clearError() })
+    this.clearError()
     this.controls()
   }
 
@@ -84,6 +94,7 @@ export class CloudProjectPanel {
     element('cp-project-list').replaceChildren(); element('cp-invitation-list').replaceChildren()
     for (const id of ['share-link', 'summary', 'login']) element<HTMLInputElement>(`cp-${id}`).value = ''
     text('cp-status', ''); text('cp-message', ''); text('project-sync-status', '')
+    this.clearError()
     this.controls()
   }
 
@@ -142,7 +153,7 @@ export class CloudProjectPanel {
         if (mutation && !await this.saved(ticket)) return
         if (this.valid(ticket)) await action()
       } catch (error) {
-        if (this.valid(ticket)) this.message(`操作未完成：${readableError(error)}`)
+        if (this.valid(ticket)) this.failure(`操作未完成：${readableError(error)}`)
       } finally { this.busy = false; if (!this.disposed) this.controls() }
     }, true)
   }
@@ -158,6 +169,34 @@ export class CloudProjectPanel {
 
   private value(id: string): string { return element<HTMLInputElement>(`cp-${id}`).value.trim() }
   private message(message: string): void { text('cp-message', message); this.notify(message) }
+
+  private failure(message: string): void {
+    element<HTMLTextAreaElement>('cp-error-detail').value = message
+    text('cp-error-copy-status', '')
+    element('cp-error').hidden = false
+    const summary = message.split('\n', 1)[0] ?? message
+    this.message(summary.length > 180 ? summary.slice(0, 180) + '…' : summary)
+    element('cp-error').focus()
+  }
+
+  private clearError(): void {
+    element('cp-error').hidden = true
+    element<HTMLTextAreaElement>('cp-error-detail').value = ''
+    text('cp-error-copy-status', '')
+  }
+
+  private async copyError(): Promise<void> {
+    const detail = element<HTMLTextAreaElement>('cp-error-detail'), value = detail.value, ticket = this.ticket()
+    if (this.closing || this.disposed || element('cp-error').hidden || !value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      if (this.valid(ticket, false) && detail.value === value && !element('cp-error').hidden) text('cp-error-copy-status', '已复制详情')
+    } catch {
+      if (!this.valid(ticket, false) || detail.value !== value || element('cp-error').hidden) return
+      detail.focus(); detail.select()
+      text('cp-error-copy-status', '复制未完成，已选中全文，可手动复制。')
+    }
+  }
 
   async refresh(): Promise<void> {
     if (!this.api || this.disposed || this.closing) return
@@ -197,6 +236,7 @@ export class CloudProjectPanel {
     for (const node of element('cloud-project-workspace').querySelectorAll<HTMLButtonElement>('[data-cp-choice]')) node.disabled = locked || !signedIn
     text('cp-auto', this.autoSession && this.state?.autoSync ? '停止本次会话自动同步' : '开启本次会话自动同步')
     element('cp-auto').setAttribute('aria-pressed', String(this.autoSession && !!this.state?.autoSync))
+    for (const id of ['cp-error-copy', 'cp-error-dismiss']) element<HTMLButtonElement>(id).disabled = this.closing || this.disposed
     this.syncControls()
   }
 
@@ -341,7 +381,7 @@ export class CloudProjectPanel {
       this.autoSession = false
       if (this.valid(ticket, false)) {
         await this.refresh()
-        if (this.valid(ticket, false)) this.message(`同步已停止：${readableError(error)}。请检查权限、登录或网络，再手动重试。`)
+        if (this.valid(ticket, false)) this.failure(`同步已停止：${readableError(error)}。请先核对远端状态，不要盲目重复操作。`)
       }
     }
   }

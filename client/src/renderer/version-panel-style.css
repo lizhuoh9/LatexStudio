@@ -1,6 +1,6 @@
 /* Inline, per-file history: all rules stay inside the PDF-right history aside. */
 #revision-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 0; border-radius: 0; overflow: auto; background: #f6f3fa; }
-#revision-panel[hidden] { display: none; }
+#revision-panel[hidden], #revision-panel #revision-diff[hidden] { display: none; }
 #revision-panel .revision-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 #revision-panel .revision-heading h2, #revision-panel .revision-heading h3 { margin: 0; font-size: 12px; font-weight: 600; }
 #revision-panel #revision-refresh, #revision-panel #revision-restore { min-height: 28px; padding: 4px 8px; font-size: 11px; }

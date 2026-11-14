@@ -118,6 +118,8 @@ export class VersionPanel {
     text('revision-status', message)
     for (const id of ['revision-description', 'revision-before', 'revision-after', 'revision-diff', 'revision-diff-summary']) text(id, '')
     element<HTMLButtonElement>('revision-restore').disabled = true
+    element<HTMLDetailsElement>('revision-full').open = false
+    element('revision-diff').hidden = true
   }
 
   private async select(id: string): Promise<void> {
@@ -144,7 +146,8 @@ export class VersionPanel {
     text('revision-description', `${entry.path} · ${KIND[entry.kind]} · ${author(entry)} · ${entry.date}\n${entry.summary}`)
     text('revision-before', versionPreview(before)); text('revision-after', versionPreview(after))
     text('revision-diff', diff.text); text('revision-diff-summary', diff.summary)
-    text('revision-status', '所选修改的前后对比')
+    element('revision-diff').hidden = !diff.text
+    text('revision-status', before === null ? '初始记录' : '所选修改的差异片段')
     element<HTMLButtonElement>('revision-restore').disabled = false
   }
 

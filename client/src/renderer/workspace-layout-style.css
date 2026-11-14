@@ -104,7 +104,7 @@ body[data-ui-theme="overleaf"] .pdf-controls button, body[data-ui-theme="overlea
 body[data-ui-theme="overleaf"] .pdf-empty { top: 35%; color: #c5d0e0; }
 body[data-ui-theme="overleaf"] .pdf-empty strong, body[data-ui-theme="overleaf"] .pdf-empty p { color: #c5d0e0; }
 body[data-ui-theme="overleaf"] .paper-illustration { background: #43516a; border-color: #75839a; }
-body[data-ui-theme="overleaf"] .workbench-notice { pointer-events: none; position: fixed; z-index: 90; right: 18px; top: 52px; max-width: min(520px,70vw); padding: 10px 14px; background: #fff; color: #303030; border: 1px solid #c9d2df; box-shadow: var(--shadow-soft); border-radius: 6px; }
+body[data-ui-theme="overleaf"] .workbench-notice { pointer-events: auto; position: fixed; z-index: 90; right: 18px; top: 52px; max-width: min(620px,calc(100vw - 64px)); max-height: min(50vh,400px); overflow: auto; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; padding: 10px 14px; background: #fff; color: #303030; border: 1px solid #c9d2df; box-shadow: var(--shadow-soft); border-radius: 6px; }
 body[data-ui-theme="overleaf"] #revision-panel { grid-area: history; border-left: 4px solid var(--frame-border); }
 body[data-ui-theme="overleaf"] #log-panel { grid-area: logs; background: #f7f8fa; border-left: 3px solid var(--frame-border); }
 body[data-ui-theme="overleaf"] #log-panel > .panel-heading { min-height: 32px; }

@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type { CloudApi, CloudWorkspaceStatus } from '../src/shared/cloud-contracts'
 import type { ProjectInfo, WorkspaceApi } from '../src/shared/workspace-contracts'
 import { Documents } from '../src/renderer/documents'
@@ -362,4 +363,57 @@ it('does not adopt a late committed result after this renderer panel was dispose
   const pending = deferred<ProjectInfo | null>(); vi.mocked(api.joinProject).mockReturnValue(pending.promise)
   const panel = make(); await settle(); get('cp-join').click(); await flush(); expect(api.joinProject).toHaveBeenCalledOnce()
   panel.dispose(); pending.resolve(project('committed')); await settle(); expect(adopt).not.toHaveBeenCalled()
+})
+
+const longFailure = 'GitHub 拒绝创建仓库（403）。' + '请核对安装授权和账号策略；未确认实际原因。'.repeat(12) + '\n远端可能已发生变化，不要重复创建。'
+async function failCreation(): Promise<CloudProjectPanel> {
+  vi.mocked(api.createPrivateProject).mockRejectedValue(new Error(longFailure))
+  const panel = make(); await settle(); get('cp-name').value = 'paper'; await click('create'); return panel
+}
+it('retains the entire multiline creation failure after timers and readonly refresh without retrying', async () => {
+  const panel = await failCreation(); const detail = get('cp-error-detail')
+  expect(get('cp-error').hidden).toBe(false); expect(detail.value).toBe('操作未完成：' + longFailure)
+  expect(detail.readOnly).toBe(true); expect(get('cp-error').focus).toHaveBeenCalledOnce()
+  expect(get('cp-message').textContent.length).toBeLessThanOrEqual(181) // Full text appears once, in the copyable field.
+  expect(get('cp-message').textContent).not.toBe(detail.value)
+  await vi.advanceTimersByTimeAsync(90_000); await panel.refresh()
+  expect(detail.value).toBe('操作未完成：' + longFailure); expect(get('cp-error').hidden).toBe(false)
+  expect(api.createPrivateProject).toHaveBeenCalledOnce()
+})
+it('copies details only on an explicit click, then dismisses locally without any retry', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined); vi.stubGlobal('navigator', { clipboard: { writeText } })
+  await failCreation(); expect(writeText).not.toHaveBeenCalled(); await click('error-copy')
+  expect(writeText).toHaveBeenCalledExactlyOnceWith('操作未完成：' + longFailure)
+  expect(get('cp-error-copy-status').textContent).toBe('已复制详情')
+  await click('error-dismiss'); expect(get('cp-error').hidden).toBe(true); expect(get('cp-error-detail').value).toBe('')
+  expect(api.createPrivateProject).toHaveBeenCalledOnce()
+})
+it('offers manual selection when clipboard access fails without leaking its exception', async () => {
+  vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('private clipboard failure')) } })
+  await failCreation(); await click('error-copy')
+  expect(get('cp-error-detail').select).toHaveBeenCalledOnce()
+  expect(get('cp-error-copy-status').textContent).toBe('复制未完成，已选中全文，可手动复制。')
+  expect(get('cp-error-detail').value).not.toContain('private clipboard failure')
+})
+it('ignores late copy feedback across project reset and blocks copying while closing', async () => {
+  const pending = deferred<void>(), writeText = vi.fn().mockReturnValue(pending.promise)
+  vi.stubGlobal('navigator', { clipboard: { writeText } }); const panel = await failCreation()
+  get('cp-error-copy').click(); await flush(); documents.project = project('other'); panel.projectChanged()
+  pending.resolve(undefined); await flush()
+  expect(get('cp-error').hidden).toBe(true); expect(get('cp-error-copy-status').textContent).toBe('')
+  panel.setClosing(true); get('cp-error-copy').disabled = false; get('cp-error-copy').click(); await flush()
+  expect(writeText).toHaveBeenCalledOnce()
+})
+it('redacts credentials and renders failure content as plain readonly text, never HTML', async () => {
+  vi.mocked(api.createPrivateProject).mockRejectedValue(new Error('<img onerror=evil> ghu_fixtureSecretToken'))
+  make(); await settle(); get('cp-name').value = 'paper'; await click('create')
+  expect(get('cp-error-detail').value).toContain('<img onerror=evil> [已隐藏凭据]')
+  expect(get('cp-error-detail').innerHTML).toBe('')
+})
+it('provides non-ellipsized wrapping, scrollable selectable details and a multiline notice', () => {
+  const cloud = readFileSync('src/renderer/cloud-project-style.css', 'utf8')
+  const layout = readFileSync('src/renderer/workspace-layout-style.css', 'utf8')
+  expect(cloud).toContain('#cp-error[hidden] { display: none; }')
+  expect(cloud).toMatch(/#cp-error-detail \{[^}]*overflow: auto;[^}]*white-space: pre-wrap;[^}]*user-select: text;/)
+  expect(layout).toMatch(/\.workbench-notice \{[^}]*text-overflow: clip; white-space: pre-wrap;/)
 })
