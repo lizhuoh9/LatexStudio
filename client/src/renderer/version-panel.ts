@@ -3,7 +3,7 @@ import type { Dialogs } from './dialogs'
 import type { Documents } from './documents'
 import { button, element, text } from './dom'
 import type { RunAction } from './sync-panel'
-import { compareVersions, versionPreview } from './version-diff'
+import { HistoryComparison } from './history-comparison'
 
 const KIND = { create: '创建', save: '保存修改', restore: '回退', external: '外部更改' }
 const MAX_ENTRIES = 300
@@ -30,12 +30,19 @@ export class VersionPanel {
   private closing = false
   private selectedId = ''
   private buttons = new Map<string, HTMLButtonElement>()
+  private comparison = new HistoryComparison(element('history-source'))
+  private selectedPath = ''
+  private rowEpoch = 0
+  private unsubscribe: () => void
 
   constructor(private api: WorkspaceApi, private documents: Documents, private dialogs: Dialogs,
-    private run: RunAction, private notify: (message: string) => void) {
+    private run: RunAction, private notify: (message: string) => void, private onRestored: () => void = () => undefined) {
     button('revision-refresh', () => run('读取共享文件历史', () => this.refresh()))
     button('revision-restore', () => run('回退所选文件版本', () => this.restore(), true))
-    api.onEvent((event) => {
+    element('revision-from').addEventListener('change', () => run('读取比较起点', () => this.compareFrom()))
+    button('revision-previous-change', () => { if (!this.closing) this.comparison.move(-1) })
+    button('revision-next-change', () => { if (!this.closing) this.comparison.move(1) })
+    this.unsubscribe = api.onEvent((event) => {
       if (event.kind !== 'close-state' && event.kind !== 'close-request') return
       this.closing = event.kind === 'close-request' || event.closing
       this.epoch++
@@ -47,7 +54,8 @@ export class VersionPanel {
   projectChanged(): void {
     this.epoch++
     this.project = this.documents.project
-    this.entries = []; this.buttons.clear()
+    this.entries = []; this.buttons.clear(); this.selectedPath = ''; this.rowEpoch++
+    element('revision-files').replaceChildren()
     element('revision-list').replaceChildren()
     this.clear(this.project ? '请选择版本。' : '请先打开项目。')
   }
@@ -69,6 +77,7 @@ export class VersionPanel {
       if (!this.current(project, epoch)) return
       this.entries = entries.slice(0, MAX_ENTRIES).sort(newestFirst)
       this.renderEntries()
+      this.renderFiles()
       text('revision-status', entries.length ? `${entries.length} 条文件版本${entries.length > MAX_ENTRIES ? '，仅显示前 300 条' : ''}` : '暂无文件版本')
     } catch (error) {
       if (this.current(project, epoch)) text('revision-status', '历史读取失败，请重试。')
@@ -77,8 +86,8 @@ export class VersionPanel {
   }
 
   private renderEntries(): void {
-    this.buttons.clear()
-    element('revision-list').replaceChildren(...this.entries.map(entry => this.row(entry)))
+    this.buttons.clear(); this.rowEpoch++
+    element('revision-list').replaceChildren(...this.entries.filter(entry => !this.selectedPath || entry.path === this.selectedPath).map(entry => this.row(entry)))
     this.selection()
   }
 
@@ -97,9 +106,9 @@ export class VersionPanel {
     kind.className = 'revision-kind'; kind.textContent = KIND[entry.kind]; changed.append(path, kind)
     const summary = document.createElement('span'); summary.className = 'revision-summary'; summary.textContent = entry.summary; summary.hidden = !entry.summary
     open.append(metadata, changed, summary); row.append(open); this.buttons.set(entry.id, open)
-    const project = this.project
+    const project = this.project, generation = this.rowEpoch
     open.addEventListener('click', () => {
-      if (this.closing || project !== this.documents.project || project !== this.project || !this.entries.includes(entry)) return
+      if (this.closing || generation !== this.rowEpoch || project !== this.documents.project || project !== this.project || !this.entries.includes(entry)) return
       this.run('读取版本差异', () => this.select(entry.id))
     })
     return row
@@ -116,10 +125,11 @@ export class VersionPanel {
   private clear(message: string): void {
     this.detail = null; this.selectedId = ''; this.selection()
     text('revision-status', message)
-    for (const id of ['revision-description', 'revision-before', 'revision-after', 'revision-diff', 'revision-diff-summary']) text(id, '')
-    element<HTMLButtonElement>('revision-restore').disabled = true
-    element<HTMLDetailsElement>('revision-full').open = false
-    element('revision-diff').hidden = true
+    for (const id of ['revision-description', 'revision-selected-time', 'revision-diff-summary']) text(id, '')
+    text('revision-file-name', '选择右侧版本查看修改')
+    this.comparison.clear()
+    for (const id of ['revision-restore', 'revision-previous-change', 'revision-next-change']) element<HTMLButtonElement>(id).disabled = true
+    element<HTMLSelectElement>('revision-from').disabled = true
   }
 
   private async select(id: string): Promise<void> {
@@ -134,6 +144,7 @@ export class VersionPanel {
       if (!this.current(project, epoch)) return
       if (detail.entry.id !== id || detail.entry.path !== entry.path) throw new Error('返回的版本与所选文件不一致，请刷新后重试。')
       this.detail = detail
+      this.rangeOptions(detail)
       this.renderDetail(detail)
     } catch (error) {
       if (this.current(project, epoch)) this.clear('版本读取失败；没有回退或覆盖任何文件。')
@@ -142,13 +153,63 @@ export class VersionPanel {
   }
 
   private renderDetail(detail: RevisionDetail): void {
-    const { entry, before, after } = detail, diff = compareVersions(before, after)
+    const { entry, before, after } = detail, result = this.comparison.show(before, after)
     text('revision-description', `${entry.path} · ${KIND[entry.kind]} · ${author(entry)} · ${entry.date}\n${entry.summary}`)
-    text('revision-before', versionPreview(before)); text('revision-after', versionPreview(after))
-    text('revision-diff', diff.text); text('revision-diff-summary', diff.summary)
-    element('revision-diff').hidden = !diff.text
-    text('revision-status', before === null ? '初始记录' : '所选修改的差异片段')
+    text('revision-file-name', entry.path); text('revision-selected-time', timestamp(entry.date))
+    text('revision-diff-summary', (result.initial ? '初始记录，无前版可比较' : `+${result.added} / −${result.removed}`) + (result.truncated ? ' · 仅显示部分内容' : ''))
+    text('revision-status', '所选版本 · ' + timestamp(entry.date))
+    for (const id of ['revision-previous-change', 'revision-next-change']) element<HTMLButtonElement>(id).disabled = !(result.added + result.removed)
     element<HTMLButtonElement>('revision-restore').disabled = false
+  }
+
+  /** Leaving History invalidates async reads without touching the current document or dirty flag. */
+  exit(): void { this.epoch++; this.rowEpoch++; this.clear('请选择版本。') }
+  dispose(): void { this.epoch++; this.rowEpoch++; this.closing = true; this.unsubscribe(); this.comparison.dispose() }
+
+  private renderFiles(): void {
+    const project = this.project, generation = this.rowEpoch
+    const paths = ['', ...new Set(this.entries.map(entry => entry.path))]
+    if (!paths.includes(this.selectedPath)) this.selectedPath = ''
+    element('revision-files').replaceChildren(...paths.map(path => {
+      const li = document.createElement('li'), open = document.createElement('button')
+      open.type = 'button'; open.textContent = path || '全部文件'; open.title = path
+      open.setAttribute('aria-current', String(path === this.selectedPath)); open.disabled = this.closing
+      open.addEventListener('click', () => {
+        if (this.closing || generation !== this.rowEpoch || project !== this.project || project !== this.documents.project) return
+        this.epoch++; this.selectedPath = path; this.clear('请选择右侧版本。'); this.renderEntries(); this.renderFiles()
+      })
+      li.append(open); return li
+    }))
+  }
+
+  private rangeOptions(detail: RevisionDetail): void {
+    const select = element<HTMLSelectElement>('revision-from')
+    const index = this.entries.findIndex(entry => entry.id === detail.entry.id)
+    const values = [{ id: '', label: '上一次修改' }, ...this.entries.slice(index + 1)
+      .filter(entry => entry.path === detail.entry.path).map(entry => ({ id: entry.id, label: timestamp(entry.date) }))]
+    select.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value.id; option.textContent = value.label; return option }))
+    select.value = ''; select.disabled = this.closing
+  }
+
+  private async compareFrom(): Promise<void> {
+    const detail = this.detail, id = element<HTMLSelectElement>('revision-from').value
+    if (!detail || this.closing || this.project !== this.documents.project) return
+    if (!id) { this.epoch++; this.renderDetail(detail); return }
+    const at = this.entries.findIndex(entry => entry.id === detail.entry.id)
+    const source = this.entries.slice(at + 1).find(entry => entry.id === id && entry.path === detail.entry.path)
+    if (at < 0 || !source) { this.clear('比较起点无效，请重新选择版本。'); return }
+    const project = this.project, epoch = ++this.epoch
+    element<HTMLButtonElement>('revision-restore').disabled = true
+    this.comparison.clear()
+    try {
+      const older = await this.api.revisionDetail(source.id)
+      if (!this.current(project, epoch)) return
+      if (older.entry.id !== source.id || older.entry.path !== detail.entry.path) throw new Error('返回的比较版本不一致。')
+      this.renderDetail({ ...detail, before: older.after })
+    } catch (error) {
+      if (this.current(project, epoch)) this.clear('比较读取失败；没有修改任何文件。')
+      throw error
+    }
   }
 
   private async saveDraft(project: ProjectInfo | null, epoch: number): Promise<boolean> {
@@ -178,5 +239,6 @@ export class VersionPanel {
     if (!this.current(project, epoch)) return
     await this.refresh()
     this.notify(`已回退文件 ${restored.path}；其他文件未回退，旧历史仍保留。`)
+    this.onRestored()
   }
 }

@@ -3,18 +3,23 @@ import { button, element, listItem, text } from './dom'
 import type { Dialogs } from './dialogs'
 import type { Documents } from './documents'
 import { VersionPanel } from './version-panel'
+import { HistoryMode } from './history-mode'
 
 export type RunAction = (label: string, action: () => Promise<void>, freezeEditor?: boolean) => void
 
 export class SyncPanel {
   private versions: VersionPanel
+  private mode: HistoryMode
   private closing = false
   private refreshing: Promise<void> | null = null
   private refreshAgain = false
+  private generation = 0
 
   constructor(private api: WorkspaceApi, private documents: Documents, private dialogs: Dialogs,
     private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void) {
-    this.versions = new VersionPanel(api, documents, dialogs, run, notify)
+    this.mode = new HistoryMode(() => this.closeHistory())
+    this.versions = new VersionPanel(api, documents, dialogs, run, notify, () => this.closeHistory())
+    button('history-back', () => this.closeHistory())
     button('cloud-open', () => this.open())
     button('revision-close', () => this.closeHistory())
     button('cloud-close', () => element<HTMLDialogElement>('cloud-dialog').close())
@@ -34,27 +39,31 @@ export class SyncPanel {
 
   private open(): void {
     if (this.closing) return
-    const panel = element('revision-panel')
-    if (!panel.hidden) { this.closeHistory(); return }
-    panel.hidden = false
-    element('cloud-open').setAttribute('aria-expanded', 'true')
-    element('revision-close').focus()
+    if (!this.documents.project) return
+    if (this.mode.active) { this.closeHistory(); return }
+    this.mode.open()
     this.refreshVisible()
   }
 
   private closeHistory(): void {
-    element('revision-panel').hidden = true
-    element('cloud-open').setAttribute('aria-expanded', 'false')
+    if (this.closing) return
+    this.generation++
+    this.versions.exit()
+    this.mode.close()
   }
 
   projectChanged(): void {
+    this.generation++
+    this.mode.close(false)
     this.versions.projectChanged()
     element('history-list').replaceChildren()
     text('revision-context', this.documents.project?.name ?? '')
     this.refreshVisible()
   }
 
-  setClosing(closing: boolean): void { this.closing = closing }
+  setClosing(closing: boolean): void { this.closing = closing; this.mode.setClosing(closing) }
+
+  dispose(): void { this.mode.dispose(); this.versions.dispose() }
 
   refreshVisible(): void {
     if (this.closing || element('revision-panel').hidden || !this.documents.project) return
@@ -100,12 +109,14 @@ export class SyncPanel {
   }
 
   async refresh(): Promise<void> {
-    if (!this.documents.project) return
+    if (!this.documents.project || this.closing) return
+    const project = this.documents.project, generation = this.generation
     let localLoaded = true
     try { await this.refreshHistory() } catch {
       localLoaded = false
       element('history-list').replaceChildren(listItem('本机 Git 快照读取失败，可重试。', '共享文件版本将独立读取，不会因此停用。'))
     }
+    if (this.closing || project !== this.documents.project || generation !== this.generation) return
     try { await this.versions.refresh() } catch { /* The shared version panel displays its own retry/error state. */ }
     if (!this.developerEnabled()) return
     try { this.renderStatus(await this.api.repository()) }

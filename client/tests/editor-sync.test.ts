@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EditorBuffer } from '../src/renderer/editor-model'
 import type { WorkspaceApi } from '../src/shared/workspace-contracts'
 import type { Documents } from '../src/renderer/documents'
@@ -16,6 +16,10 @@ vi.mock('../src/renderer/dom', () => ({
   },
   text: vi.fn(), listItem: (label: string, detail: string) => ({ label, detail })
 }))
+vi.mock('../src/renderer/history-comparison', () => ({ HistoryComparison: class {
+  clear = vi.fn(); dispose = vi.fn(); move = vi.fn()
+  show = vi.fn(() => ({ added: 0, removed: 0, initial: false, truncated: false }))
+} }))
 import { SyncPanel } from '../src/renderer/sync-panel'
 
 let api: WorkspaceApi
@@ -27,6 +31,7 @@ let panel: SyncPanel
 
 beforeEach(() => {
   dom.handlers.clear(); dom.nodes.clear()
+  vi.stubGlobal('document', { body: { dataset: {} }, addEventListener: vi.fn(), removeEventListener: vi.fn(), querySelector: vi.fn() })
   const status = { connection: { owner: 'fixture', repository: 'paper', login: 'writer', url: 'https://github.com/fixture/paper' },
     changes: [{ path: 'main.tex', kind: 'modified' }], conflict: true, message: 'previous conflict' }
   api = { repository: vi.fn().mockResolvedValue(status), history: vi.fn().mockResolvedValue([]),
@@ -40,6 +45,8 @@ beforeEach(() => {
   notify = vi.fn(); pending = Promise.resolve()
   panel = new SyncPanel(api, documents, dialogs, (_label, action) => { pending = action() }, vi.fn(), notify)
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('safe retries after a persisted synchronization conflict', () => {
   it('lets the backend re-check a stale conflict without force or alternate APIs', async () => {
@@ -63,13 +70,27 @@ describe('safe retries after a persisted synchronization conflict', () => {
     dom.handlers.get('cloud-refresh')!(); await pending
     expect(api.history).toHaveBeenCalledOnce(); expect(api.revisions).toHaveBeenCalledOnce()
   })
-  it('opens history inline instead of opening the account dialog, and can close it independently', async () => {
+  it('opens a separate read-only history mode without opening account settings, and returns to editing', async () => {
     documents.project = { id: 'project', root: '/project', name: 'paper', files: [], defaultMain: null }
     dom.handlers.get('cloud-open')!(); await vi.waitFor(() => expect(api.revisions).toHaveBeenCalledOnce())
     expect(dom.nodes.get('revision-panel')!.hidden).toBe(false)
+    expect(document.body.dataset.history).toBe('open')
+    expect(dom.nodes.get('history-comparison-panel')!.hidden).toBe(false)
+    expect(dom.nodes.get('history-back')!.hidden).toBe(false)
     expect(dom.nodes.get('cloud-open')!.setAttribute).toHaveBeenCalledWith('aria-expanded', 'true')
     expect(dom.nodes.get('cloud-dialog')?.showModal).toBeUndefined()
-    dom.handlers.get('revision-close')!(); expect(dom.nodes.get('revision-panel')!.hidden).toBe(true)
+    dom.handlers.get('history-back')!(); expect(dom.nodes.get('revision-panel')!.hidden).toBe(true)
+    expect(document.body.dataset.history).toBeUndefined()
+    expect(documents.buffer.content).toBe('original'); expect(api.sync).not.toHaveBeenCalled()
+  })
+  it('does not reopen or repopulate versions after a late history read finishes following Back to editor', async () => {
+    documents.project = { id: 'project', root: '/project', name: 'paper', files: [], defaultMain: null }
+    let resolve!: (value: never[]) => void
+    vi.mocked(api.history).mockReturnValue(new Promise(done => { resolve = done }))
+    dom.handlers.get('cloud-open')!(); dom.handlers.get('history-back')!(); resolve([])
+    await new Promise(done => setTimeout(done, 0))
+    expect(api.revisions).not.toHaveBeenCalled(); expect(document.body.dataset.history).toBeUndefined()
+    expect(dom.nodes.get('history-comparison-panel')!.hidden).toBe(true)
   })
   it('does not refresh hidden or closing history', () => {
     documents.project = { id: 'project', root: '/project', name: 'paper', files: [], defaultMain: null }

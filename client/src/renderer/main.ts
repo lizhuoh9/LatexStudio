@@ -109,6 +109,7 @@ class Workbench {
     window.addEventListener('unload', () => {
       this.startup?.dispose()
       this.layout.dispose()
+      this.sync.dispose()
       this.splitter.dispose()
       void this.pdf.dispose().catch(() => undefined)
       this.outline?.dispose()

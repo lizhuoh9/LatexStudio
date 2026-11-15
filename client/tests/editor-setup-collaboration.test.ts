@@ -9,6 +9,10 @@ import type { Dialogs } from '../src/renderer/dialogs'
 interface NodeMock { value: string; open: boolean; addEventListener: ReturnType<typeof vi.fn>;
   replaceChildren: ReturnType<typeof vi.fn>; append: ReturnType<typeof vi.fn> }
 const dom = vi.hoisted(() => ({ handlers: new Map<string, () => void>(), nodes: new Map<string, NodeMock>(), text: vi.fn() }))
+vi.mock('../src/renderer/history-comparison', () => ({ HistoryComparison: class {
+  clear = vi.fn(); dispose = vi.fn(); move = vi.fn()
+  show = vi.fn(() => ({ added: 0, removed: 0, initial: false, truncated: false }))
+} }))
 vi.mock('../src/renderer/dom', () => ({
   button: (id: string, handler: () => void) => dom.handlers.set(id, handler), text: dom.text,
   element: (id: string) => {
@@ -22,6 +26,7 @@ let panel: SyncPanel
 let pending: Promise<void>
 let notify: (message: string) => void
 beforeEach(() => {
+  vi.stubGlobal('document', { body: { dataset: {} }, addEventListener: vi.fn(), removeEventListener: vi.fn(), querySelector: vi.fn() })
   dom.handlers.clear(); dom.nodes.clear(); dom.text.mockClear(); pending = Promise.resolve(); notify = vi.fn()
   api = { repository: vi.fn().mockRejectedValue(new Error('fixture unavailable account transport')),
     history: vi.fn().mockResolvedValue([{ summary: 'local writing', author: 'fixture', date: 'fixture date' }]),

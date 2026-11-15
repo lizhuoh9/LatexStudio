@@ -1,32 +1,26 @@
-/* Inline, per-file history: all rules stay inside the PDF-right history aside. */
-#revision-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 0; border-radius: 0; overflow: auto; background: #f6f3fa; }
-#revision-panel[hidden], #revision-panel #revision-diff[hidden] { display: none; }
-#revision-panel .revision-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-#revision-panel .revision-heading h2, #revision-panel .revision-heading h3 { margin: 0; font-size: 12px; font-weight: 600; }
-#revision-panel #revision-refresh, #revision-panel #revision-restore { min-height: 28px; padding: 4px 8px; font-size: 11px; }
-#revision-panel #revision-status { flex-shrink: 0; margin: 0; padding: 8px 12px; color: var(--muted); font-size: 11px; }
-#revision-panel #revision-list { flex: 0 1 auto; max-height: min(38vh,320px); min-height: 110px; list-style: none; margin: 0; padding: 0 8px 8px 21px; overflow: auto; }
-#revision-panel .revision-event { position: relative; margin: 0; padding: 0 0 6px; }
-#revision-panel .revision-event::before { content: ""; position: absolute; left: -12px; top: 14px; width: 5px; height: 5px; border-radius: 50%; background: var(--border-strong); }
-#revision-panel .revision-event:not(:last-child)::after { content: ""; position: absolute; left: -10px; top: 21px; bottom: -8px; width: 1px; background: var(--border); }
-#revision-panel .revision-entry { display: block; width: 100%; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font: inherit; white-space: normal; }
-#revision-panel .revision-entry:hover:not(:disabled) { background: var(--surface-hover); }
-#revision-panel .revision-entry[aria-current="true"] { background: #eae2f5; border-color: #86719f; }
-#revision-panel .revision-entry:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-#revision-panel .revision-entry:disabled { opacity: .6; cursor: default; }
-#revision-panel .revision-meta, #revision-panel .revision-file-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
-#revision-panel .revision-meta { margin-bottom: 4px; color: var(--muted); font-size: 10px; }
-#revision-panel .revision-time { flex: 0 1 auto; min-width: 0; font-variant-numeric: tabular-nums; }
-#revision-panel .revision-author { flex: 0 1 45%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#revision-panel .revision-path { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
-#revision-panel .revision-kind { flex-shrink: 0; color: var(--text-secondary); font-size: 10px; }
-#revision-panel .revision-summary { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; max-height: 3em; overflow: hidden; overflow-wrap: anywhere; }
-#revision-panel #revision-detail { margin: 0 12px 12px; }
-#revision-panel #revision-description { margin: 0; padding: 8px 12px; max-height: 110px; overflow: auto; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
-#revision-panel .revision-comparison { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; margin: 0; padding: 0 12px; }
-#revision-panel .revision-comparison h4 { margin: 0 0 5px; color: var(--text-secondary); font-size: 11px; }
-#revision-panel #revision-before, #revision-panel #revision-after, #revision-panel #revision-diff { min-width: 0; min-height: 45px; max-height: 155px; margin: 0; padding: 8px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-canvas); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 var(--font-mono); }
-#revision-panel details { flex-shrink: 0; margin: 10px 12px; }
-#revision-panel details > summary { cursor: pointer; color: var(--text-secondary); font-size: 11px; }
-#revision-panel #revision-diff-summary { margin: 6px 0; padding: 0; color: var(--muted); font-size: 10px; }
-#revision-panel .button-row { margin: 8px 12px 12px; }
+/* Official Overleaf History reference: full-height chronology beside the source comparison. */
+#revision-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 0; overflow: hidden; background: #1c232d; color: #e5eaf1; }
+#revision-panel[hidden] { display: none; }
+#revision-panel .revision-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 8px 10px; background: #1c232d; color: inherit; border-bottom: 1px solid #465267; }
+#revision-panel .revision-heading h2 { margin: 0; font-size: 12px; font-weight: 600; }
+#revision-panel .revision-heading button { color: #e5eaf1; background: transparent; padding: 3px 6px; }
+#revision-panel .revision-heading button:hover:not(:disabled) { background: #41516a; }
+#revision-panel #revision-context { padding: 4px 12px; margin: 0; color: #bdc9d9; font-size: 11px; overflow-wrap: anywhere; }
+#revision-panel #revision-list { background: #1c232d; color: #e5eaf1; flex: 1; min-height: 0; list-style: none; margin: 0; padding: 0; overflow: auto; }
+#revision-panel .revision-event { margin: 0; padding: 0; border-bottom: 1px solid #354052; }
+#revision-panel .revision-entry { display: block; width: 100%; min-width: 0; padding: 12px; border: 0; border-left: 3px solid transparent; border-radius: 0; background: transparent; color: inherit; text-align: left; font: inherit; white-space: normal; }
+#revision-panel .revision-entry:hover:not(:disabled) { background: #303c4e; }
+#revision-panel .revision-entry[aria-current="true"] { background: #185c3b; border-left-color: #62cc8e; color: #fff; }
+#revision-panel .revision-entry:focus-visible { outline: 2px solid #a5dfbd; outline-offset: -3px; }
+#revision-panel .revision-entry:disabled { opacity: .65; }
+#revision-panel .revision-meta, #revision-panel .revision-file-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+#revision-panel .revision-meta { margin-bottom: 6px; font-size: 11px; }
+#revision-panel .revision-author { color: #bfdbd1; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#revision-panel .revision-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+#revision-panel .revision-path { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+#revision-panel .revision-kind, #revision-panel .revision-summary { font-size: 10px; color: #c1ccdb; }
+#revision-panel .revision-summary { display: none; }
+#revision-panel #revision-status { margin: 0; padding: 8px 12px; font-size: 11px; color: #c1ccdb; }
+#revision-panel .snapshot-tools { flex-shrink: 0; margin: 0; padding: 10px; max-height: 35vh; overflow: auto; border-top: 1px solid #465267; }
+#revision-panel .snapshot-tools > summary { cursor: pointer; font-size: 11px; }
+#revision-panel .snapshot-tools :is(label, li, p) { color: #c1ccdb; }

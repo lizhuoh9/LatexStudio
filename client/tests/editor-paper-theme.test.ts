@@ -39,12 +39,16 @@ describe('user-selected Overleaf home/editor layout retains real application con
     expect(editor.indexOf('id="file-outline"')).toBeGreaterThan(editor.indexOf('id="file-tree"'))
     expect(layout).toContain('grid-template-rows: minmax(180px,1.35fr) minmax(120px,1fr)')
   })
-  it('keeps code in the middle and PDF to its right, with history inline after PDF', () => {
+  it('keeps the editor/PDF layout and provides an independent reference-based History mode', () => {
     expect(editor.indexOf('id="editor-panel"')).toBeLessThan(editor.indexOf('aria-label="PDF 预览"'))
     expect(editor.indexOf('id="revision-panel"')).toBeGreaterThan(editor.indexOf('aria-label="PDF 预览"'))
     expect(tag('revision-list')).toContain('<ol'); expect(layout).toContain('minmax(180px,var(--source-track,1.15fr)) minmax(180px,var(--preview-track,1fr))')
     expect(tag('source-preview-splitter')).toContain('role="separator"'); expect(tag('source-preview-splitter')).toContain('tabindex="0"')
     expect(html.slice(html.indexOf('id="cloud-dialog"'), html.indexOf('id="project-dialog"'))).not.toContain('id="revision-list"')
+    for (const id of ['history-files', 'history-comparison-panel', 'history-back']) expect(tag(id)).toContain('hidden')
+    expect(tag('history-source')).toContain('tabindex="0"'); expect(tag('revision-files')).toContain('<ul')
+    expect(layout).toContain('[data-history="open"]'); expect(layout).toContain('"files source history"')
+    expect(html).not.toContain('id="revision-full"'); expect(html).not.toContain('id="revision-diff"')
   })
   it('places compile controls over PDF and preserves actual editable compiler settings', () => {
     const preview = editor.slice(editor.indexOf('aria-label="PDF 预览"'), editor.indexOf('id="pdf-empty"'))
@@ -75,7 +79,7 @@ describe('user-selected Overleaf home/editor layout retains real application con
   })
   it('retains accessible announcements, keyboard-readable differences and native focus handling', () => {
     for (const id of ['status', 'revision-status', 'collaboration-state', 'setup-status']) { expect(tag(id)).toContain('role="status"'); expect(tag(id)).toContain('aria-live="polite"') }
-    for (const id of ['revision-before', 'revision-after', 'revision-diff', 'log']) expect(tag(id)).toContain('tabindex="0"')
+    for (const id of ['history-source', 'log']) expect(tag(id)).toContain('tabindex="0"')
     expect(base).toContain(':focus-visible'); expect(base).toContain('forced-colors: active')
   })
   it('uses local assets and its own brand, not an embedded or copied Overleaf runtime', () => {

@@ -11,6 +11,7 @@ interface NodeMock {
   dataset: Record<string, string>; attributes: Map<string, string>; listeners: Map<string, () => void>
   addEventListener(name: string, handler: () => void): void
   setAttribute(name: string, value: string): void
+  removeAttribute(name: string): void; scrollIntoView(): void; focus(): void
   append(...nodes: NodeMock[]): void
   replaceChildren(...nodes: NodeMock[]): void
   click(): void
@@ -25,6 +26,7 @@ const dom = vi.hoisted(() => {
       set textContent(value: string) { ownText = value; this.children = [] },
       addEventListener(name, handler) { this.listeners.set(name, handler) },
       setAttribute(name, value) { this.attributes.set(name, value) },
+      removeAttribute(name) { this.attributes.delete(name) }, scrollIntoView() {}, focus() {},
       append(...children) { this.children.push(...children) },
       replaceChildren(...children) { this.children = children },
       click() { if (!this.disabled) this.listeners.get('click')?.() } }
@@ -35,7 +37,7 @@ const dom = vi.hoisted(() => {
 vi.mock('../src/renderer/dom', () => ({ element: dom.get, button: (id: string, handler: () => void) => dom.handlers.set(id, handler),
   text: (id: string, value: string) => { dom.get(id).textContent = value } }))
 import { VersionPanel } from '../src/renderer/version-panel'
-import { compareVersions, versionPreview } from '../src/renderer/version-diff'
+import { historyLines } from '../src/renderer/history-comparison'
 
 let api: WorkspaceApi, docs: Documents, dialogs: Dialogs, panel: VersionPanel
 let pending: Promise<void>, receive: (event: WorkspaceEvent) => void, disk: DocumentSnapshot
@@ -88,9 +90,8 @@ describe('shared file versions and bounded text-only comparisons', () => {
     expect(fields.find(node => node.className === 'revision-author')?.textContent).toBe('<img src=x>')
     expect(fields.find(node => node.className === 'revision-summary')?.textContent).toBe('Changed introduction')
     expect(row.title).toContain('OS 显示名，未经认证')
-    expect(dom.get('revision-after').textContent).toBe(detail.after)
-    expect(dom.get('revision-after')).not.toHaveProperty('innerHTML')
-    expect(dom.get('revision-before').textContent).toBe('old\nline')
+    expect(dom.get('history-source').textContent).toContain(detail.after)
+    expect(dom.get('history-source')).not.toHaveProperty('innerHTML')
   })
   it('labels external edits as unknown even when an author field is present', async () => {
     detail.entry.kind = 'external'; detail.entry.author = 'untrusted attribution'
@@ -105,42 +106,21 @@ describe('shared file versions and bounded text-only comparisons', () => {
     expect(revisionButton().title).toContain('非逐次编辑来源')
     expect(descendants(revisionButton()).find(node => node.className === 'revision-author')?.textContent).toBe('提交 · alice')
   })
-  it('explains missing before content and truncates large diffs/previews', () => {
-    expect(versionPreview(null)).toContain('此前不存在')
-    const result = compareVersions(null, 'new line')
-    expect(result.text).toBe(''); expect(result.summary).toContain('初始记录')
-    const large = compareVersions('a\n'.repeat(5000), 'b'.repeat(100000))
-    expect(large.summary).toContain('不是完整差异'); expect(large.text.length).toBeLessThan(125000)
-    expect(versionPreview('x'.repeat(100000)).length).toBeLessThan(60100)
-  })
-  it('aligns nearby common lines while marking insertions/removals', () => {
-    const result = compareVersions('a\nb\nc', 'a\nnew\nb\nc')
-    expect(result.text).toContain('＋ new'); expect(result.text).toContain('  b')
-    expect(result.summary).toContain('新增 1 行、移除 0 行')
-  })
-  it('shows only changed hunks with line coordinates and two unchanged context lines', () => {
-    const lines = Array.from({ length: 500 }, (_, i) => 'unchanged-' + (i + 1))
-    const next = [...lines]; next[100] = 'first edit'; next[400] = 'second edit'
-    const diff = compareVersions(lines.join('\n'), next.join('\n'))
-    expect(diff.text).toContain('− unchanged-101'); expect(diff.text).toContain('＋ first edit')
-    expect(diff.text).toContain('＋ second edit'); expect(diff.text).toContain('修改前第 99 行')
-    expect(diff.text).not.toContain('unchanged-250'); expect(diff.text).not.toContain('unchanged-1\n')
-    expect(diff.text.split('\n').length).toBeLessThan(20)
-    expect(compareVersions(lines.join('\n'), lines.join('\n')).text).toBe('')
-    expect(compareVersions('', 'added to existing empty file').text).toContain('＋ added')
+  it('bounds long display comparisons without changing stored content', () => {
+    const large = historyLines('a\n'.repeat(5000), 'b'.repeat(140000))
+    expect(large.truncated).toBe(true); expect(large.rows.length).toBeLessThanOrEqual(2400)
   })
   it('summarizes an initial snapshot without automatically showing its entire document', async () => {
     detail.before = null; detail.after = 'whole document\n'.repeat(408); await select()
-    expect(dom.get('revision-diff').textContent).toBe(''); expect(dom.get('revision-diff').hidden).toBe(true)
     expect(dom.get('revision-diff-summary').textContent).toContain('初始记录')
-    expect(dom.get('revision-after').textContent).toBe(detail.after)
-    expect(dom.get('revision-full')).toHaveProperty('open', false)
+    expect(descendants(dom.get('history-source')).filter(node => node.className.includes('history-line-added'))).toHaveLength(0)
+    expect(dom.get('history-source').textContent).toContain('whole document')
   })
   it('clears selected contents on explicit refresh and limits the rendered list', async () => {
     await select()
     vi.mocked(api.revisions).mockResolvedValue(Array.from({ length: 350 }, (_, index) => ({ ...detail.entry, id: `v-${index}` })))
     await panel.refresh()
-    expect(dom.get('revision-after').textContent).toBe(''); expect(dom.get('revision-restore').disabled).toBe(true)
+    expect(dom.get('history-source').textContent).toBe(''); expect(dom.get('revision-restore').disabled).toBe(true)
     expect(dom.get('revision-list').children).toHaveLength(300); expect(dom.get('revision-status').textContent).toContain('仅显示前 300 条')
   })
 })
@@ -150,7 +130,7 @@ describe('native timeline order, selection and project reset', () => {
     const css = readFileSync('src/renderer/version-panel-style.css', 'utf8')
     expect(css).toContain('#revision-panel .revision-entry[aria-current="true"]')
     expect(css).toContain('#revision-panel #revision-list'); expect(css).toContain('overflow: auto')
-    expect(css).toContain('grid-template-columns: minmax(0,1fr)')
+    expect(css).toContain('flex: 1'); expect(css).toContain('background: #185c3b')
     expect(css).not.toMatch(/\.workspace|\.files-panel|@import|url\(/)
     for (const rule of css.split('}').filter(value => value.includes('{'))) {
       expect(rule.slice(0, rule.indexOf('{')).replace(/\/\*[\s\S]*?\*\//g, '').trim().startsWith('#revision-panel')).toBe(true)
@@ -184,7 +164,7 @@ describe('native timeline order, selection and project reset', () => {
     await select(); const oldButton = revisionButton(), draft = docs.buffer.content
     vi.mocked(api.revisions).mockClear(); vi.mocked(api.revisionDetail).mockClear()
     docs.project = { ...docs.project!, id: 'next-paper' }; panel.projectChanged()
-    expect(dom.get('revision-list').children).toHaveLength(0); expect(dom.get('revision-after').textContent).toBe('')
+    expect(dom.get('revision-list').children).toHaveLength(0); expect(dom.get('history-source').textContent).toBe('')
     expect(dom.get('revision-restore').disabled).toBe(true); expect(docs.buffer.content).toBe(draft)
     oldButton.click(); await pending
     expect(api.revisions).not.toHaveBeenCalled(); expect(api.revisionDetail).not.toHaveBeenCalled(); expect(api.restoreRevision).not.toHaveBeenCalled()
@@ -201,7 +181,46 @@ describe('native timeline order, selection and project reset', () => {
     receive({ kind: 'close-request', requestId: 'close' }); expect(row.disabled).toBe(true); row.click(); await pending
     expect(api.revisionDetail).not.toHaveBeenCalled()
     receive({ kind: 'close-state', closing: false }); expect(row.disabled).toBe(false)
-    expect(row.attributes.get('aria-pressed')).toBe('false'); expect(dom.get('revision-after').textContent).toBe('')
+    expect(row.attributes.get('aria-pressed')).toBe('false'); expect(dom.get('history-source').textContent).toBe('')
+  })
+})
+
+describe('reference History file selection, comparison range and leaving without edits', () => {
+  async function setupRange(): Promise<RevisionDetail> {
+    const older = { ...detail, entry: { ...detail.entry, id: 'older', date: '2026-11-12' }, after: 'baseline' }
+    vi.mocked(api.revisions).mockResolvedValue([detail.entry, older.entry, { ...older.entry, id: 'other-file', path: 'chapter.tex' }])
+    vi.mocked(api.revisionDetail).mockImplementation(async id => id === 'older' ? older : detail)
+    await select(); return older
+  }
+  async function from(id: string): Promise<void> { dom.get('revision-from').value = id; dom.get('revision-from').listeners.get('change')!(); await pending }
+  it('compares older same-file snapshots while restoring only the selected target version', async () => {
+    const older = await setupRange(); await from(older.entry.id)
+    expect(dom.get('history-source').textContent).toContain('baseline')
+    expect(dom.get('revision-from').children.map(option => option.value)).toEqual(['', 'older'])
+    await click('revision-restore'); expect(api.restoreRevision).toHaveBeenCalledWith(detail.entry.id, 'current-revision')
+  })
+  it('never reads a forged or different-file range and disables stale restore intent', async () => {
+    await setupRange(); vi.mocked(api.revisionDetail).mockClear(); await from('other-file')
+    expect(api.revisionDetail).not.toHaveBeenCalled(); expect(dom.get('revision-restore').disabled).toBe(true)
+  })
+  it('rejects mismatched range replies and drops responses after leaving History', async () => {
+    await setupRange(); vi.mocked(api.revisionDetail).mockResolvedValue({ ...detail, entry: { ...detail.entry, id: 'older', path: 'forged.tex' } })
+    await expect(from('older')).rejects.toThrow('不一致'); expect(dom.get('revision-restore').disabled).toBe(true)
+    await setupRange(); const request = deferred<RevisionDetail>(); vi.mocked(api.revisionDetail).mockReturnValue(request.promise)
+    dom.get('revision-from').value = 'older'; dom.get('revision-from').listeners.get('change')!(); panel.exit(); request.resolve(detail); await pending
+    expect(dom.get('history-source').textContent).toBe(''); expect(dom.get('revision-restore').disabled).toBe(true)
+  })
+  it('filters historical file entries without loading another editor file or accepting detached timeline buttons', async () => {
+    await setupRange(); const stale = revisionButton(); vi.mocked(api.revisionDetail).mockClear(); vi.mocked(api.readFile).mockClear()
+    const file = dom.get('revision-files').children.map(row => row.children[0]).find(node => node?.textContent === 'chapter.tex')!
+    file.click(); stale.click(); await pending
+    expect(dom.get('revision-list').children.map(row => row.children[0]?.dataset.revisionId)).toEqual(['other-file'])
+    expect(api.revisionDetail).not.toHaveBeenCalled(); expect(api.readFile).not.toHaveBeenCalled(); expect(docs.buffer.path).toBe('main.tex')
+  })
+  it('leaves and disposes without saving or dropping a live draft', async () => {
+    await select(); docs.edited('unsaved draft'); panel.exit(); panel.dispose()
+    expect(docs.buffer.content).toBe('unsaved draft'); expect(docs.buffer.dirty).toBe(true)
+    expect(api.saveFile).not.toHaveBeenCalled(); expect(api.restoreRevision).not.toHaveBeenCalled(); expect(dom.get('revision-restore').disabled).toBe(true)
   })
 })
 
@@ -262,7 +281,7 @@ describe('late reads, project changes and close handshakes', () => {
     await panel.refresh(); const request = deferred<RevisionDetail>(); vi.mocked(api.revisionDetail).mockReturnValue(request.promise)
     revisionButton().click()
     docs.project = { ...docs.project! }; request.resolve(detail); await pending
-    expect(dom.get('revision-after').textContent).toBe(''); expect(dom.get('revision-restore').disabled).toBe(true)
+    expect(dom.get('history-source').textContent).toBe(''); expect(dom.get('revision-restore').disabled).toBe(true)
   })
   it('drops a late history reply during close and does not automatically reload after thaw', async () => {
     const request = deferred<RevisionDetail['entry'][]>(); vi.mocked(api.revisions).mockReturnValue(request.promise)
