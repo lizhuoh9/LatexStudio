@@ -130,7 +130,7 @@ describe('native timeline order, selection and project reset', () => {
     const css = readFileSync('src/renderer/version-panel-style.css', 'utf8')
     expect(css).toContain('#revision-panel .revision-entry[aria-current="true"]')
     expect(css).toContain('#revision-panel #revision-list'); expect(css).toContain('overflow: auto')
-    expect(css).toContain('flex: 1'); expect(css).toContain('background: #185c3b')
+    expect(css).toContain('flex: 1'); expect(css).toContain('background: #eef2ff')
     expect(css).not.toMatch(/\.workspace|\.files-panel|@import|url\(/)
     for (const rule of css.split('}').filter(value => value.includes('{'))) {
       expect(rule.slice(0, rule.indexOf('{')).replace(/\/\*[\s\S]*?\*\//g, '').trim().startsWith('#revision-panel')).toBe(true)

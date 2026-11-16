@@ -138,18 +138,30 @@ export function parseFileOutline(content: string): FileOutlineEntry[] {
   return entries
 }
 
+function sameEntries(a: readonly FileOutlineEntry[], b: readonly FileOutlineEntry[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]!, right = b[i]!
+    if (left.kind !== right.kind || left.title !== right.title || left.line !== right.line || left.parentIndex !== right.parentIndex || left.starred !== right.starred) return false
+  }
+  return true
+}
+
 export class FileOutline {
   private entries: FileOutlineEntry[] = []
   private generation = 0
   private closing = false
   private disposed = false
+  private rendered = false
   constructor(private host: HTMLElement, private reveal: (line: number) => void) {
     host.setAttribute('data-file-outline', '')
     this.update('')
   }
   update(content: string): void {
     if (this.disposed) return
-    this.entries = parseFileOutline(content); this.generation++; this.render()
+    const next = parseFileOutline(content)
+    if (this.rendered && sameEntries(this.entries, next)) return
+    this.entries = next; this.rendered = true; this.generation++; this.render()
   }
   setClosing(closing: boolean): void {
     if (this.disposed || this.closing === closing) return
@@ -157,7 +169,7 @@ export class FileOutline {
   }
   dispose(): void {
     if (this.disposed) return
-    this.disposed = true; this.generation++; this.entries = []; this.host.replaceChildren()
+    this.disposed = true; this.rendered = false; this.generation++; this.entries = []; this.host.replaceChildren()
   }
   private render(): void {
     const generation = this.generation, rows: HTMLLIElement[] = [], childLists = new Map<number, HTMLOListElement>()

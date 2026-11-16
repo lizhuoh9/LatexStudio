@@ -38,11 +38,17 @@ export class PdfPreview {
   private observer: ResizeObserver | null = null
   private onScroll = (): void => { void this.schedule().catch(error => this.report(error)) }
   private onResize = (): void => { void this.resize().catch(error => this.report(error)) }
+  private onWheel = (event: WheelEvent): void => {
+    if ((!event.ctrlKey && !event.metaKey) || !this.document || this.disposed || !event.deltaY) return
+    event.preventDefault()
+    void this.scale(event.deltaY < 0 ? 0.1 : -0.1).catch(error => this.report(error))
+  }
 
   constructor(private notify: (message: string) => void) {
     if (!this.scroll) throw new Error('缺少 PDF 滚动容器')
     this.host.classList.add('pdf-page-stack')
     this.scroll.addEventListener('scroll', this.onScroll, { passive: true })
+    this.scroll.addEventListener('wheel', this.onWheel, { passive: false })
     window.addEventListener('resize', this.onResize)
     if (typeof ResizeObserver !== 'undefined') {
       this.observer = new ResizeObserver(this.onResize)
@@ -64,7 +70,7 @@ export class PdfPreview {
       if (generation !== this.generation || this.disposed) return
       if (!Number.isInteger(document.numPages) || document.numPages < 1 || document.numPages > PDF_PREVIEW_LIMITS.pages) throw new Error(`PDF 页数超出预览上限（${PDF_PREVIEW_LIMITS.pages} 页）`)
       this.document = document
-      this.page = 1; this.zoom = 1; this.ratio = Math.SQRT2; this.lastError = ''
+      this.page = 1; this.ratio = Math.SQRT2; this.lastError = ''
       this.mount(document.numPages)
       element('pdf-empty').hidden = true
       await this.schedule()
@@ -95,7 +101,8 @@ export class PdfPreview {
     const next = Math.max(.5, Math.min(2, Math.round((this.zoom + delta) * 100) / 100))
     if (next === this.zoom) return
     this.zoom = next
-    this.invalidate()
+    this.renderVersion++
+    if (this.drawing) this.release(this.drawing.slot)
     this.layout()
     await this.schedule()
   }
@@ -133,6 +140,7 @@ export class PdfPreview {
       slot.width = Math.min(desired, PDF_PREVIEW_LIMITS.cssEdge, PDF_PREVIEW_LIMITS.cssEdge / ratio)
       slot.height = slot.width * ratio; slot.top = top
       slot.node.style.width = `${slot.width}px`; slot.node.style.height = `${slot.height}px`
+      if (slot.canvas) { slot.canvas.style.width = `${slot.width}px`; slot.canvas.style.height = `${slot.height}px` }
       top += slot.height + GAP; widest = Math.max(widest, slot.width)
     }
     this.host.style.width = `${Math.max(this.width, widest + PADDING * 2)}px`
@@ -219,7 +227,10 @@ export class PdfPreview {
     canvas.width = Math.max(1, Math.floor(viewport.width)); canvas.height = Math.max(1, Math.floor(viewport.height))
     canvas.style.width = `${slot.width}px`; canvas.style.height = `${slot.height}px`
     canvas.setAttribute('aria-hidden', 'true')
+    const previousCanvas = slot.canvas, previousPage = slot.page
     slot.canvas = canvas; slot.page = page; slot.node.replaceChildren(canvas)
+    if (previousCanvas) { previousCanvas.width = 0; previousCanvas.height = 0 }
+    previousPage?.cleanup()
     const drawing: Drawing = { slot, page, canvas, task: page.render({ canvas, viewport }) }
     this.drawing = drawing
     try {
@@ -276,6 +287,7 @@ export class PdfPreview {
 
   async clear(): Promise<void> {
     this.generation++
+    this.zoom = 1
     const cleanup = this.reset()
     element('pdf-empty').hidden = false
     text('pdf-position', '尚未编译')
@@ -286,6 +298,7 @@ export class PdfPreview {
     if (this.disposed) { await this.retirement; return }
     this.disposed = true
     this.scroll?.removeEventListener('scroll', this.onScroll)
+    this.scroll?.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.onResize)
     this.observer?.disconnect(); this.observer = null
     await this.clear()

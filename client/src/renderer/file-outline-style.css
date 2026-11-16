@@ -1,9 +1,9 @@
 /* Current-file outline only: native lists/buttons, no global tree or editor overrides. */
-[data-file-outline] { margin: 0; padding: 8px; min-height: 0; overflow: auto; list-style: none; background: #243247; color: #e1e7f0; }
+[data-file-outline] { margin: 0; padding: 8px; min-height: 0; overflow: auto; list-style: none; background: #f6f8fc; color: #333c4d; }
 [data-file-outline] .outline-item { margin: 0; padding: 0; list-style: none; }
-[data-file-outline] .outline-children { margin: 0 0 2px 9px; padding: 0 0 0 9px; border-left: 1px solid #46556b; list-style: none; }
-[data-file-outline] .outline-entry { display: block; width: 100%; min-width: 0; min-height: 29px; margin: 0; padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: #e1e7f0; text-align: left; font: inherit; font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-[data-file-outline] .outline-entry:hover:not(:disabled) { background: #35475f; color: #ffffff; }
-[data-file-outline] .outline-entry:focus-visible { outline: 2px solid #8bc8f2; outline-offset: -2px; background: #35475f; }
+[data-file-outline] .outline-children { margin: 0 0 2px 10px; padding: 0 0 0 9px; border-left: 1px solid #dbe2ef; list-style: none; }
+[data-file-outline] .outline-entry { display: block; width: 100%; min-width: 0; min-height: 29px; margin: 0; padding: 5px 9px; border: 0; border-radius: 7px; background: transparent; color: #333c4d; text-align: left; font: inherit; font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+[data-file-outline] .outline-entry:hover:not(:disabled) { background: #e4e9f3; color: #111827; }
+[data-file-outline] .outline-entry:focus-visible { outline: 2px solid #3b58eb; outline-offset: -2px; background: #e4e9f3; }
 [data-file-outline] .outline-entry:disabled { opacity: .5; cursor: default; }
-[data-file-outline] .outline-empty { margin: 0; padding: 8px; color: #bac7d9; font-size: 11px; list-style: none; }
+[data-file-outline] .outline-empty { margin: 0; padding: 10px; color: #647084; font-size: 11px; list-style: none; }

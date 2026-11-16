@@ -83,7 +83,7 @@ describe('ordinary markup advertises only delivered boundaries', () => {
       expect(html.indexOf(`id="${id}"`)).toBeGreaterThan(start)
       expect(html.indexOf(`id="${id}"`)).toBeLessThan(end)
     }
-    expect(html).toContain('开发者调试（旧 PAT 适配器）')
+    expect(html).toContain('开发者调试（PAT）')
   })
   it('does not fake ordinary login, compile readiness or disk-space acceptance', () => {
     expect(html).toContain('id="collaboration-state" class="collaboration-state" role="status" aria-live="polite"')

@@ -1,6 +1,14 @@
 import type { DocumentSnapshot, ProjectFile, ProjectInfo, WorkspaceApi } from '../shared/workspace-contracts'
 import { EditorBuffer } from './editor-model'
 
+function sameFiles(a: readonly ProjectFile[], b: readonly ProjectFile[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]!.path !== b[i]!.path || a[i]!.kind !== b[i]!.kind || a[i]!.size !== b[i]!.size) return false
+  }
+  return true
+}
+
 export interface DocumentUi {
   show(content: string, readOnly: boolean): void
   state(buffer: EditorBuffer): void
@@ -102,8 +110,9 @@ export class Documents {
     const generation = this.generation
     const files = await this.api.files()
     if (this.closing || generation !== this.generation || !this.project) return
+    const previous = this.project.files
     this.project.files = files
-    this.ui.files(files, this.buffer.path)
+    if (!sameFiles(previous, files)) this.ui.files(files, this.buffer.path)
     const path = this.buffer.path
     if (!path || (!paths.includes(path) && !paths.includes(''))) return
     const version = this.buffer.editVersion

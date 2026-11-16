@@ -144,10 +144,13 @@ export class ProjectService {
     if (failed) throw primary
   }
   private async scan(files?: ProjectFile[]): Promise<Map<string, string>> {
-    const result = new Map<string, string>()
-    for (const file of files ?? await this.list()) {
-      const info = await lstat(await this.project.resolve(file.path))
-      result.set(file.path, `${file.kind}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`)
+    const entries = files ?? await this.list(), result = new Map<string, string>()
+    for (let offset = 0; offset < entries.length; offset += 16) {
+      const batch = await Promise.all(entries.slice(offset, offset + 16).map(async (file) => {
+        const info = await lstat(await this.project.resolve(file.path))
+        return [file.path, `${file.kind}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`] as const
+      }))
+      for (const [path, fingerprint] of batch) result.set(path, fingerprint)
     }
     return result
   }

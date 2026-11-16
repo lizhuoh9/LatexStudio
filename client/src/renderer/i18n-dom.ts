@@ -11,10 +11,10 @@ let pruning = false
 
 function render(node: Node, binding: Binding): void {
   const value = typeof binding.source === 'function' ? binding.source() : translate(binding.source)
-  if (binding.kind === 'node') node.nodeValue = value
-  else if (binding.kind === 'text') node.textContent = value
-  else if (binding.kind === 'value') (node as HTMLTextAreaElement).value = value
-  else (node as Element).setAttribute(binding.attribute!, value)
+  if (binding.kind === 'node') { if (node.nodeValue !== value) node.nodeValue = value }
+  else if (binding.kind === 'text') { if (node.textContent !== value) node.textContent = value }
+  else if (binding.kind === 'value') { if ((node as HTMLTextAreaElement).value !== value) (node as HTMLTextAreaElement).value = value }
+  else if (typeof (node as Element).getAttribute !== 'function' || (node as Element).getAttribute(binding.attribute!) !== value) (node as Element).setAttribute(binding.attribute!, value)
 }
 function remember(node: Node, key: string, binding: Binding): void {
   // Rows are often built off-DOM and appended as one batch; prune only after that synchronous render completes.

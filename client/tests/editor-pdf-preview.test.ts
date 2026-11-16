@@ -18,18 +18,18 @@ class NodeMock {
   hidden = false; textContent = ''; className = ''; width = 0; height = 0
   clientWidth = 640; clientHeight = 700; scrollTop = 0; scrollLeft = 0
   style: Record<string, string> = {}; dataset: Record<string, string> = {}; attributes = new Map<string, string>()
-  children: NodeMock[] = []; handlers = new Map<string, Set<() => void>>()
+  children: NodeMock[] = []; handlers = new Map<string, Set<(event?: unknown) => void>>()
   classList = { add: (name: string) => { this.className += ` ${name}` } }
   constructor(readonly tagName: string) {}
   closest(): NodeMock | null { return scroller }
   replaceChildren(...nodes: NodeMock[]): void { this.children = nodes }
   setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
-  addEventListener(name: string, listener: () => void): void {
+  addEventListener(name: string, listener: (event?: unknown) => void): void {
     if (!this.handlers.has(name)) this.handlers.set(name, new Set())
     this.handlers.get(name)!.add(listener)
   }
-  removeEventListener(name: string, listener: () => void): void { this.handlers.get(name)?.delete(listener) }
-  emit(name: string): void { for (const listener of this.handlers.get(name) ?? []) listener() }
+  removeEventListener(name: string, listener: (event?: unknown) => void): void { this.handlers.get(name)?.delete(listener) }
+  emit(name: string, event?: unknown): void { for (const listener of this.handlers.get(name) ?? []) listener(event) }
   set innerHTML(_value: string) { throw new Error('PDF data must never become markup') }
 }
 let host: NodeMock, scroller: NodeMock, empty: NodeMock, position: NodeMock, browser: NodeMock
@@ -121,6 +121,16 @@ describe('continuous local canvas PDF preview', () => {
     await preview!.scale(100); expect(position.textContent).toContain('200%')
     await preview!.scale(-100); expect(position.textContent).toContain('50%')
     await preview!.scale(Number.NaN); await preview!.move(Infinity); expect(position.textContent).toContain('50%')
+  })
+  it('supports Ctrl/Meta + wheel zooming inside the PDF scroller', async () => {
+    await open(4)
+    const prevent = vi.fn()
+    scroller.emit('wheel', { ctrlKey: true, metaKey: false, deltaY: -120, preventDefault: prevent }); await flush()
+    expect(prevent).toHaveBeenCalledTimes(1); expect(position.textContent).toContain('110%')
+    scroller.emit('wheel', { ctrlKey: false, metaKey: true, deltaY: 120, preventDefault: prevent }); await flush()
+    expect(prevent).toHaveBeenCalledTimes(2); expect(position.textContent).toContain('100%')
+    scroller.emit('wheel', { ctrlKey: false, metaKey: false, deltaY: -120, preventDefault: prevent }); await flush()
+    expect(prevent).toHaveBeenCalledTimes(2); expect(position.textContent).toContain('100%')
   })
   it('observes divider/container resize and preserves the current page when refitting', async () => {
     await open(20); await preview!.move(5); expect(position.textContent).toContain('6 / 20')

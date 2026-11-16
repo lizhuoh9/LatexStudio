@@ -184,7 +184,9 @@ export class ProjectLibraryPanel {
     open.setAttribute('aria-current', String(active))
     name.className = 'pl-name'; name.textContent = entry.name
     const badge = document.createElement('span')
-    badge.className = 'pl-badge'; uiText(badge, entry.syncIssue ? '关联异常' : entry.github ? 'GitHub' : '本地')
+    badge.className = 'pl-badge'
+    badge.setAttribute('data-kind', entry.syncIssue ? 'issue' : entry.github ? 'github' : 'local')
+    uiText(badge, entry.syncIssue ? '关联异常' : entry.github ? 'GitHub' : '本地')
     uiAttribute(badge, 'title', entry.syncIssue ? '此项目关联状态读取异常，请打开后检查项目设置' : entry.github ? `${entry.github.owner}/${entry.github.name}` : '此项目仅在本地')
     const modified = this.modifiedAt(entry)
     uiFormattedAttribute(open, 'aria-label', () => `${entry.name}${translate(active ? '（当前项目，继续编辑）' : '，切换到此项目')} · ${badge.textContent} · ${modified.title}`)

@@ -283,9 +283,9 @@ it('renders a separate all-projects dashboard without fold/current or duplicated
   for (const id of ['project-library-toggle', 'project-library-current', 'project-open', 'project-create']) expect(markup).not.toContain(`id="${id}"`)
   expect(get('project-open').handlers.size).toBe(0); expect(get('project-create').handlers.size).toBe(0)
 })
-it('scopes the dark slate dashboard table styles without touching editor layout or external project actions', () => {
+it('scopes the sunlit dashboard card styles without touching editor layout or external project actions', () => {
   const css = readFileSync('src/renderer/project-library-style.css', 'utf8')
-  expect(css).toContain('background: #212c37'); expect(css).toContain('#project-library .pl-columns')
+  expect(css).toContain('background: #ffffff'); expect(css).toContain('#project-library .pl-columns')
   expect(css).toContain('#project-library .pl-modified'); expect(css).toContain('focus-visible')
   expect(css).not.toMatch(/\.workspace|\.files-panel|#project-open|#project-create|is-collapsed|@import|url\(/)
 })

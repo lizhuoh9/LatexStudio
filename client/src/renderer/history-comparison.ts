@@ -19,22 +19,29 @@ export function historyLines(before: string | null, after: string): HistoryCompa
     right.lines.forEach((text, index) => rows.push({ kind: 'same', text, oldLine: null, newLine: index + 1 }))
     return { rows, added: 0, removed: 0, initial, truncated: right.truncated }
   }
-  const a = left.lines, b = right.lines, width = b.length + 1
-  const lengths = new Uint16Array((a.length + 1) * width)
-  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) {
-    lengths[i * width + j] = a[i] === b[j] ? 1 + lengths[(i + 1) * width + j + 1]! :
+  const a = left.lines, b = right.lines
+  let prefix = 0
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++
+  let aEnd = a.length, bEnd = b.length
+  while (aEnd > prefix && bEnd > prefix && a[aEnd - 1] === b[bEnd - 1]) { aEnd--; bEnd-- }
+  for (let p = 0; p < prefix; p++) rows.push({ kind: 'same', text: a[p]!, oldLine: p + 1, newLine: p + 1 })
+  const midA = aEnd - prefix, midB = bEnd - prefix, width = midB + 1
+  const lengths = new Uint16Array((midA + 1) * width)
+  for (let i = midA - 1; i >= 0; i--) for (let j = midB - 1; j >= 0; j--) {
+    lengths[i * width + j] = a[prefix + i] === b[prefix + j] ? 1 + lengths[(i + 1) * width + j + 1]! :
       Math.max(lengths[(i + 1) * width + j]!, lengths[i * width + j + 1]!)
   }
   let i = 0, j = 0, added = 0, removed = 0
-  while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) {
-      rows.push({ kind: 'same', text: a[i]!, oldLine: i + 1, newLine: j + 1 }); i++; j++
-    } else if (i < a.length && (j === b.length || lengths[(i + 1) * width + j]! >= lengths[i * width + j + 1]!)) {
-      rows.push({ kind: 'removed', text: a[i]!, oldLine: ++i, newLine: null }); removed++
+  while (i < midA || j < midB) {
+    if (i < midA && j < midB && a[prefix + i] === b[prefix + j]) {
+      rows.push({ kind: 'same', text: a[prefix + i]!, oldLine: prefix + i + 1, newLine: prefix + j + 1 }); i++; j++
+    } else if (i < midA && (j === midB || lengths[(i + 1) * width + j]! >= lengths[i * width + j + 1]!)) {
+      rows.push({ kind: 'removed', text: a[prefix + i]!, oldLine: prefix + ++i, newLine: null }); removed++
     } else {
-      rows.push({ kind: 'added', text: b[j]!, oldLine: null, newLine: ++j }); added++
+      rows.push({ kind: 'added', text: b[prefix + j]!, oldLine: null, newLine: prefix + ++j }); added++
     }
   }
+  for (let s = 0; s < a.length - aEnd; s++) rows.push({ kind: 'same', text: a[aEnd + s]!, oldLine: aEnd + s + 1, newLine: bEnd + s + 1 })
   return { rows, added, removed, initial, truncated: left.truncated || right.truncated }
 }
 

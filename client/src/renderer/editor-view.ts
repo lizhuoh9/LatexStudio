@@ -29,9 +29,9 @@ export class SourceEditor {
         if (update.docChanged && !this.loading) changed(update.state.doc.toString())
       }),
       this.language.of(this.languageExtensions()),
-      EditorView.theme({ '&': { height: '100%', fontSize: '13px' },
-        '.cm-scroller': { overflow: 'auto', fontFamily: 'Consolas, "Cascadia Code", monospace' },
-        '.cm-content': { padding: '12px 0' }, '.cm-gutters': { backgroundColor: '#f7f8fa', border: 'none' },
+      EditorView.theme({ '&': { height: '100%', fontSize: '13.5px', lineHeight: '1.65' },
+        '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, monospace' },
+        '.cm-content': { padding: '16px 0' }, '.cm-gutters': { backgroundColor: '#fafbfe', borderRight: '1px solid #e9edf5', paddingRight: '4px' },
         '&.cm-focused': { outline: 'none' } })
     ]
     this.view = new EditorView({ parent, state: this.state('', true) })

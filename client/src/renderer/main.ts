@@ -63,6 +63,8 @@ class Workbench {
   private layout: WorkbenchLayout
   private splitter: WorkspaceSplitter
   private outline: FileOutline | null = null
+  private lastOutlineContent: string | null = null
+  private lastMainTexList = ''
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   private sharing: SharingPanel | null = null
   private cloud: CloudProjectPanel
@@ -221,10 +223,10 @@ class Workbench {
     element('main-file').addEventListener('change', () => this.compileIdentity())
     button('cancel-compile', () => { void this.api.cancelCompile().catch((error: unknown) => this.notify(readableError(error))) })
     button('log-clear', () => text('log', ''))
-    button('pdf-previous', () => this.run('PDF 上一页', () => this.pdf.move(-1)))
-    button('pdf-next', () => this.run('PDF 下一页', () => this.pdf.move(1)))
-    button('pdf-smaller', () => this.run('缩小预览', () => this.pdf.scale(-0.1)))
-    button('pdf-larger', () => this.run('放大预览', () => this.pdf.scale(0.1)))
+    button('pdf-previous', () => { if (!this.closing) void this.pdf.move(-1).catch(error => this.notify(readableError(error))) })
+    button('pdf-next', () => { if (!this.closing) void this.pdf.move(1).catch(error => this.notify(readableError(error))) })
+    button('pdf-smaller', () => { if (!this.closing) void this.pdf.scale(-0.1).catch(error => this.notify(readableError(error))) })
+    button('pdf-larger', () => { if (!this.closing) void this.pdf.scale(0.1).catch(error => this.notify(readableError(error))) })
     button('about-open', () => element<HTMLDialogElement>('about-dialog').showModal())
     button('dashboard-help', () => element<HTMLDialogElement>('about-dialog').showModal())
     button('project-share', () => { if (!this.busy && !this.closing) this.sharing?.openShare() })
@@ -347,7 +349,10 @@ class Workbench {
   }
 
   private renderDocument(buffer: EditorBuffer): void {
-    this.outline?.update(buffer.content)
+    if (this.lastOutlineContent !== buffer.content) {
+      this.lastOutlineContent = buffer.content
+      this.outline?.update(buffer.content)
+    }
     if (buffer.path) text('active-file', buffer.path)
     else uiText(element('active-file'), '源文件')
     text('save-state', buffer.path ? (buffer.dirty ? '● 未保存' : '已保存到本地') : '未打开文件')
@@ -360,13 +365,20 @@ class Workbench {
   }
 
   private renderFiles(files: ProjectFile[], active: string): void {
-    renderFiles(files, active, (path) => this.run('打开文件', () => this.documents.open(path)), this.documents.project?.id ?? '')
+    const projectId = this.documents.project?.id ?? ''
+    renderFiles(files, active, (path) => this.run('打开文件', () => this.documents.open(path)), projectId)
     const select = element<HTMLSelectElement>('main-file')
-    const previous = select.value || this.documents.project?.defaultMain || ''
-    select.replaceChildren(...files.filter((file) => file.kind === 'text' && /\.tex$/i.test(file.path)).map((file) => {
-      const option = document.createElement('option'); option.value = file.path; option.textContent = file.path; return option
-    }))
-    if ([...select.options].some((option) => option.value === previous)) select.value = previous
+    const texFiles = files.filter((file) => file.kind === 'text' && /\.tex$/i.test(file.path))
+    const key = `${projectId}\0${texFiles.map((file) => file.path).join('\0')}`
+    if (key !== this.lastMainTexList) {
+      const sameProject = this.lastMainTexList.startsWith(`${projectId}\0`)
+      this.lastMainTexList = key
+      const previous = (sameProject ? select.value : '') || this.documents.project?.defaultMain || ''
+      select.replaceChildren(...texFiles.map((file) => {
+        const option = document.createElement('option'); option.value = file.path; option.textContent = file.path; return option
+      }))
+      if ([...select.options].some((option) => option.value === previous)) select.value = previous
+    }
     this.compileIdentity()
   }
 

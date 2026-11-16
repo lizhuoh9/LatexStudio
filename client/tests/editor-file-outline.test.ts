@@ -128,6 +128,12 @@ text
     panel.update('\n' + String.raw`\section{New}`); old.click(); expect(reveal).not.toHaveBeenCalled()
     buttons(host)[0]!.click(); expect(reveal).toHaveBeenCalledExactlyOnceWith(2)
   })
+  it('skips redundant DOM rebuilds when prose edits do not alter outline headings', () => {
+    const panel = mount(String.raw`\section{Intro}` + '\nhello'), first = buttons(host)[0]!
+    panel.update(String.raw`\section{Intro}` + '\nhello world')
+    expect(buttons(host)[0]).toBe(first)
+    buttons(host)[0]!.click(); expect(reveal).toHaveBeenCalledExactlyOnceWith(1)
+  })
   it('blocks current and stale clicks during closing, then remounts usable controls on canceled close', () => {
     const panel = mount(String.raw`\section{Current}`), old = buttons(host)[0]!
     panel.setClosing(true); expect(buttons(host)[0]!.disabled).toBe(true)
@@ -145,9 +151,9 @@ text
     panel.update(Array.from({ length: MAX_OUTLINE_ITEMS + 2 }, (_, index) => `\\section{${index}}`).join('\n'))
     expect(buttons(host)).toHaveLength(MAX_OUTLINE_ITEMS)
   })
-  it('keeps every dark-slate style scoped to its host without external assets or global editor rules', () => {
+  it('keeps every ice-slate style scoped to its host without external assets or global editor rules', () => {
     const css = readFileSync('src/renderer/file-outline-style.css', 'utf8')
-    expect(css).toContain('background: #243247'); expect(css).toContain(':focus-visible')
+    expect(css).toContain('background: #f6f8fc'); expect(css).toContain(':focus-visible')
     expect(css).not.toMatch(/@import|url\(|\.workspace|\.cm-editor/)
     const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}').filter(rule => rule.includes('{'))
     for (const rule of rules) expect(rule.slice(0, rule.indexOf('{')).trim().startsWith('[data-file-outline]')).toBe(true)
