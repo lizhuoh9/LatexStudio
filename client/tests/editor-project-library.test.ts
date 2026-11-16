@@ -26,7 +26,7 @@ class NodeMock {
   get innerHTML(): string { return this.markup }
   append(...nodes: NodeMock[]): void { this.children.push(...nodes) }
   replaceChildren(...nodes: NodeMock[]): void { this.children = nodes }
-  setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
+  setAttribute(name: string, value: string): void { this.attributes.set(name, value); if (name === 'title') this.title = value }
   addEventListener(_type: string, handler: () => void): void { this.handlers.add(handler) }
   removeEventListener(_type: string, handler: () => void): void { this.handlers.delete(handler) }
   click(): void { if (!this.disabled) for (const handler of this.handlers) handler() }

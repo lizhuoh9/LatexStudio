@@ -5,6 +5,8 @@ import type { Dialogs } from './dialogs'
 import type { RunAction } from './sync-panel'
 import { element, text } from './dom'
 import { readableError } from './editor-model'
+import { intlLocale, translate } from '../shared/i18n'
+import { localizeStaticHtml, uiText, uiAttribute, uiFormattedText, uiFormattedAttribute } from './i18n-dom'
 
 type Ticket = { project: ProjectInfo | null; version: number; path: string; epoch: number }
 const TEMPLATE = `<header class="pl-heading"><h2 id="project-library-heading">全部项目</h2><div class="pl-heading-actions">
@@ -38,6 +40,7 @@ export class ProjectLibraryPanel {
     private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void,
     private resume: () => void = () => undefined) {
     element('project-library').innerHTML = TEMPLATE
+    localizeStaticHtml(element('project-library'))
     element('project-library-refresh').addEventListener('click', this.refreshClick)
     element('project-library-search').addEventListener('input', this.searchInput)
     this.render()
@@ -156,7 +159,7 @@ export class ProjectLibraryPanel {
     list.replaceChildren(...projects.map(entry => this.row(entry, locked)))
     if (this.ready && !projects.length) {
       const empty = document.createElement('li'); empty.className = 'pl-empty'
-      empty.textContent = this.state.projects.length ? '没有匹配的项目' : '尚无项目'
+      uiText(empty, this.state.projects.length ? '没有匹配的项目' : '尚无项目')
       list.append(empty)
     }
   }
@@ -166,9 +169,9 @@ export class ProjectLibraryPanel {
     const date = typeof value === 'string' ? new Date(value) : null
     const valid = !!date && Number.isFinite(date.getTime()) && date.toISOString() === value
     node.className = 'pl-modified'; node.dateTime = valid ? value! : ''
-    node.textContent = valid ? date!.toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '未知'
+    uiFormattedText(node, () => valid ? date!.toLocaleString(intlLocale(), { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : translate('未知'))
     const opened = new Date(entry.lastOpenedAt), openedValid = Number.isFinite(opened.getTime()) && opened.toISOString() === entry.lastOpenedAt
-    node.title = `${valid ? `最后修改：${value}` : '最后修改时间未知'}\n${openedValid ? `最近打开：${entry.lastOpenedAt}` : '最近打开时间未知'}`
+    uiFormattedAttribute(node, 'title', () => `${translate(valid ? `最后修改：${value}` : '最后修改时间未知')}\n${translate(openedValid ? `最近打开：${entry.lastOpenedAt}` : '最近打开时间未知')}`)
     return node
   }
 
@@ -181,10 +184,10 @@ export class ProjectLibraryPanel {
     open.setAttribute('aria-current', String(active))
     name.className = 'pl-name'; name.textContent = entry.name
     const badge = document.createElement('span')
-    badge.className = 'pl-badge'; badge.textContent = entry.syncIssue ? '关联异常' : entry.github ? 'GitHub' : '本地'
-    badge.title = entry.syncIssue ? '此项目关联状态读取异常，请打开后检查项目设置' : entry.github ? `${entry.github.owner}/${entry.github.name}` : '此项目仅在本地'
+    badge.className = 'pl-badge'; uiText(badge, entry.syncIssue ? '关联异常' : entry.github ? 'GitHub' : '本地')
+    uiAttribute(badge, 'title', entry.syncIssue ? '此项目关联状态读取异常，请打开后检查项目设置' : entry.github ? `${entry.github.owner}/${entry.github.name}` : '此项目仅在本地')
     const modified = this.modifiedAt(entry)
-    open.setAttribute('aria-label', `${entry.name}${active ? '（当前项目，继续编辑）' : '，切换到此项目'}，${badge.textContent}，${modified.title}`)
+    uiFormattedAttribute(open, 'aria-label', () => `${entry.name}${translate(active ? '（当前项目，继续编辑）' : '，切换到此项目')} · ${badge.textContent} · ${modified.title}`)
     open.append(name, badge, modified)
     this.listen(open, () => {
       if (open.disabled) return
@@ -193,8 +196,8 @@ export class ProjectLibraryPanel {
     })
     const forget = document.createElement('button')
     forget.type = 'button'; forget.className = 'pl-forget'; forget.textContent = '×'; forget.disabled = locked || active || entry.id === this.state.activeId
-    forget.title = active ? '当前项目不能移出列表' : '移出列表，不删除硬盘文件'
-    forget.setAttribute('aria-label', `从列表移出 ${entry.name}，不删除文件`)
+    uiAttribute(forget, 'title', active ? '当前项目不能移出列表' : '移出列表，不删除硬盘文件')
+    uiAttribute(forget, 'aria-label', `从列表移出 ${entry.name}，不删除文件`)
     this.listen(forget, () => { if (!forget.disabled) this.dispatch('移出项目入口', ticket => this.forget(entry, ticket)) })
     row.append(open, forget)
     return row

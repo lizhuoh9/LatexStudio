@@ -1,3 +1,5 @@
+import { uiText, uiFormattedText } from './i18n-dom'
+import { intlLocale, translate } from '../shared/i18n'
 import type { CloudProject, CollaborationApi } from '../shared/collaboration-contracts'
 import { button, element, text } from './dom'
 import { CollaborationModel, collaborationDetail, VERIFICATION_URI, type CollaborationAction, type CollaborationTicket } from './collaboration-model'
@@ -80,14 +82,15 @@ export class CollaborationPanel {
   }
 
   private render(): void {
-    text('collaboration-state', this.accountStatus())
+    if (this.model.account) text('collaboration-state', this.accountStatus())
+    else uiText(element('collaboration-state'), this.accountStatus())
     const phase = this.model.state?.phase
     const detail = phase === 'error' || phase === 'authorizing' || this.recovering() ? collaborationDetail(this.model.state?.message ?? '') : ''
     text('collaboration-detail', detail)
     element('collaboration-detail').hidden = !detail
     const expires = this.model.account ? this.model.state?.expiresAt : null
-    text('collaboration-session-expiry', expires ? this.model.state?.renewable === true ? this.model.state.sessionOnly ? '本次运行自动保持登录' : '自动保持登录' :
-      `到期 ${new Date(expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '')
+    uiFormattedText(element('collaboration-session-expiry'), () => expires ? this.model.state?.renewable === true ? translate(this.model.state.sessionOnly ? '本次运行自动保持登录' : '自动保持登录') :
+      translate(`到期 ${new Date(expires).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' })}`) : '')
     element('collaboration-session-expiry').hidden = !expires
     element('collaboration-project-area').hidden = !this.model.account
     text('collaboration-error', this.model.error)
@@ -163,12 +166,12 @@ export class CollaborationPanel {
       const name = document.createElement('strong')
       name.textContent = `${project.owner}/${project.name}`
       const scope = document.createElement('small')
-      scope.textContent = project.private ? '私有' : '公开'
+      uiText(scope, project.private ? '私有' : '公开')
       item.append(name, scope); list.append(item)
     }
     if (!projects.length) {
       const item = document.createElement('li')
-      item.textContent = this.model.account ? '尚未加载项目' : ''
+      uiText(item, this.model.account ? '尚未加载项目' : '')
       list.append(item)
     }
   }

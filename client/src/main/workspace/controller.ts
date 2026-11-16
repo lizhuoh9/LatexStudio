@@ -23,6 +23,7 @@ import { githubInstallationUrl } from '../collaboration/configuration'
 import { ProjectLibrary, projectIdForRoot } from './project-library'
 import { readProjectLastModified } from './project-modification'
 import { PROJECT_LIBRARY_CHANNELS as P, type ProjectLibraryState } from '../../shared/project-library-contracts'
+import { translate } from '../../shared/i18n'
 
 type SenderEvent = IpcMainEvent | IpcMainInvokeEvent
 type RepositoryService = Pick<GitHubRepository, 'status' | 'history' | 'snapshot' | 'connect' | 'disconnect' | 'sync'>
@@ -60,8 +61,8 @@ export class WorkspaceController {
       requireSaved: () => this.requireSaved(), epoch: () => this.editEpoch,
       confirmLeave: () => this.confirmLeave(), directory: title => this.selectDirectory(title),
       confirm: async (message, detail) => {
-        const result = await dialog.showMessageBox(this.window, { type: 'question', message, detail,
-          buttons: ['取消', '确认继续'], defaultId: 0, cancelId: 0, noLink: true })
+        const result = await dialog.showMessageBox(this.window, { type: 'question', message: translate(message), detail: translate(detail),
+          buttons: [translate('取消'), translate('确认继续')], defaultId: 0, cancelId: 0, noLink: true })
         return result.response === 1 && !this.closing && !this.window.isDestroyed()
       },
       activate: (root, signal, verifySession) => this.activate(root, signal, verifySession),
@@ -268,16 +269,16 @@ export class WorkspaceController {
     if (this.window.isDestroyed()) return false
     if (!this.dirty) return true
     const result = await dialog.showMessageBox(this.window, {
-      type: 'warning', message: '当前文档有尚未保存的编辑。',
-      detail: '返回后可先保存。继续会丢弃编辑器中尚未写入文件的内容，不会删除已有文件。',
-      buttons: ['返回保存', '放弃未保存编辑并继续'], defaultId: 0, cancelId: 0
+      type: 'warning', message: translate('当前文档有尚未保存的编辑。'),
+      detail: translate('返回后可先保存。继续会丢弃编辑器中尚未写入文件的内容，不会删除已有文件。'),
+      buttons: [translate('返回保存'), translate('放弃未保存编辑并继续')], defaultId: 0, cancelId: 0
     })
     return result.response === 1
   }
 
   private async selectDirectory(title: string): Promise<string | null> {
     const selection = await dialog.showOpenDialog(this.window, {
-      title, properties: ['openDirectory', 'createDirectory', 'dontAddToRecent']
+      title: translate(title), properties: ['openDirectory', 'createDirectory', 'dontAddToRecent']
     })
     const root = selection.canceled ? null : selection.filePaths[0] ?? null
     if (root) await this.requireLocalRoot(root)
@@ -392,9 +393,9 @@ export class WorkspaceController {
     if (current.revision !== expected) throw new Error('文件已变化，回退冲突；请重新读取比较，不会覆盖。')
     const epoch = this.editEpoch
     const result = await dialog.showMessageBox(this.window, {
-      type: 'warning', message: `回退文件 ${detail.entry.path} 到所选版本？`,
-      detail: `只改变这一个文件，不是整个项目。当前已保存内容也会留在新版本的修改前内容中；旧历史不会删除。\\n版本：${detail.entry.date} · ${detail.entry.author}`,
-      buttons: ['取消', '确认回退此文件'], defaultId: 0, cancelId: 0
+      type: 'warning', message: translate(`回退文件 ${detail.entry.path} 到所选版本？`),
+      detail: translate(`只改变这一个文件，不是整个项目。当前已保存内容也会留在新版本的修改前内容中；旧历史不会删除。\\n版本：${detail.entry.date} · ${detail.entry.author}`),
+      buttons: [translate('取消'), translate('确认回退此文件')], defaultId: 0, cancelId: 0
     })
     if (result.response !== 1 || this.window.isDestroyed()) throw new Error('已取消回退，文件未修改。')
     this.requireSaved()
@@ -419,9 +420,9 @@ export class WorkspaceController {
     if (!status.connection) throw new Error('请先关联 GitHub 仓库。')
     const preview = status.changes.map(change => change.path).slice(0, 30).join('\n')
     const result = await dialog.showMessageBox(this.window, {
-      type: 'question', message: `与 ${status.connection.owner}/${status.connection.repository} 同步？`,
-      detail: `${status.changes.length} 个待记录文件改动。同步会保存本地版本并收发远端版本；冲突时不会强制覆盖。\n${preview}`,
-      buttons: ['取消', '确认同步'], defaultId: 0, cancelId: 0
+      type: 'question', message: translate(`与 ${status.connection.owner}/${status.connection.repository} 同步？`),
+      detail: translate(`${status.changes.length} 个待记录文件改动。同步会保存本地版本并收发远端版本；冲突时不会强制覆盖。\n${preview}`),
+      buttons: [translate('取消'), translate('确认同步')], defaultId: 0, cancelId: 0
     })
     if (result.response !== 1) throw new Error('已取消同步确认，不会开始本次同步。')
     this.requireSaved()
@@ -457,7 +458,7 @@ export class WorkspaceController {
 
   private async closeNotice(message: string): Promise<void> {
     if (this.window.isDestroyed()) return
-    try { await dialog.showMessageBox(this.window, { type: 'warning', message }) }
+    try { await dialog.showMessageBox(this.window, { type: 'warning', message: translate(message) }) }
     catch { /* A failed native dialog cannot turn an unconfirmed close into success. */ }
   }
 
@@ -472,9 +473,9 @@ export class WorkspaceController {
     if (!this.transfer.isActive()) return true
     if (this.window.isDestroyed()) return false
     const result = await dialog.showMessageBox(this.window, {
-      type: 'warning', message: '项目传输尚未结束，要请求取消并等待后关闭吗？',
-      detail: '会等待当前动作及已登记连接清理，不强制停止。部分本地修改或已接收的上传不会自动撤回。',
-      buttons: ['保留窗口继续等待', '请求取消并等待关闭'], defaultId: 0, cancelId: 0
+      type: 'warning', message: translate('项目传输尚未结束，要请求取消并等待后关闭吗？'),
+      detail: translate('会等待当前动作及已登记连接清理，不强制停止。部分本地修改或已接收的上传不会自动撤回。'),
+      buttons: [translate('保留窗口继续等待'), translate('请求取消并等待关闭')], defaultId: 0, cancelId: 0
     })
     if (result.response !== 1 || this.window.isDestroyed()) return false
     await this.transfer.cancelAndWait()

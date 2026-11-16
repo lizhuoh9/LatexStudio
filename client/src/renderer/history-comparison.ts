@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import './history-comparison-style.css'
+import { uiText } from './i18n-dom'
 
 type Kind = 'same' | 'added' | 'removed'
 export interface HistoryLine { kind: Kind; text: string; oldLine: number | null; newLine: number | null }
@@ -77,7 +78,7 @@ export class HistoryComparison {
     return row
   }
   private message(message: string): void {
-    const node = document.createElement('p'); node.className = 'history-source-message'; node.textContent = message; this.host.append(node)
+    const node = document.createElement('p'); node.className = 'history-source-message'; uiText(node, message); this.host.append(node)
   }
   private reveal(focus: boolean): void {
     const node = this.changes[this.current]

@@ -23,7 +23,7 @@ class NodeMock {
   replaceChildren(...nodes: NodeMock[]): void { this.children = nodes }
   addEventListener(_type: string, action: () => void): void { this.handlers.add(action) }
   removeEventListener(_type: string, action: () => void): void { this.handlers.delete(action) }
-  setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
+  setAttribute(name: string, value: string): void { this.attributes.set(name, value); if (name === 'title') this.title = value }
   querySelectorAll(): NodeMock[] {
     return this.children.flatMap(node => [...(node.dataset.cpChoice ? [node] : []), ...node.querySelectorAll()])
   }

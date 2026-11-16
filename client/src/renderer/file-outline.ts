@@ -1,3 +1,5 @@
+import { uiText, uiAttribute } from './i18n-dom'
+
 export const MAX_OUTLINE_ITEMS = 300
 export const MAX_OUTLINE_CHARACTERS = 1024 * 1024
 export const MAX_OUTLINE_TITLE = 160
@@ -163,8 +165,8 @@ export class FileOutline {
     for (const entry of this.entries) {
       const row = document.createElement('li'), button = document.createElement('button')
       row.className = 'outline-item'; button.type = 'button'; button.className = 'outline-entry'; button.disabled = this.closing
-      button.textContent = entry.title; button.title = `${entry.title} · 第 ${entry.line} 行`; button.dataset.outlineLine = String(entry.line)
-      button.setAttribute('aria-label', `${entry.title}，第 ${entry.line} 行`)
+      button.textContent = entry.title; uiAttribute(button, 'title', `${entry.title} · 第 ${entry.line} 行`); button.dataset.outlineLine = String(entry.line)
+      uiAttribute(button, 'aria-label', `${entry.title}，第 ${entry.line} 行`)
       button.addEventListener('click', () => {
         if (!this.disposed && !this.closing && generation === this.generation) this.reveal(entry.line)
       })
@@ -181,7 +183,7 @@ export class FileOutline {
       rows.push(row)
     }
     if (!this.entries.length) {
-      const empty = document.createElement('li'); empty.className = 'outline-empty'; empty.textContent = '当前文件暂无章节'; this.host.append(empty)
+      const empty = document.createElement('li'); empty.className = 'outline-empty'; uiText(empty, '当前文件暂无章节'); this.host.append(empty)
     }
   }
 }

@@ -1,3 +1,4 @@
+import { uiAttribute } from './i18n-dom'
 import type { TexSetupApi, TexSetupState } from '../shared/tex-setup-contracts'
 import { button, element, text } from './dom'
 import { SetupModel, setupBytes, setupDetail, type SetupAction } from './setup-model'
@@ -82,7 +83,7 @@ export class SetupPanel {
     const label = active ? (percent === null ? (checking ? '正在后台校验，可先编辑论文…' : this.model.summary) : `${percent}% · ${amount}`)
       : this.model.preparing ? '正在启动组件配置…' : ''
     text('setup-progress-label', label)
-    progress.setAttribute('aria-valuetext', label)
+    uiAttribute(progress, 'aria-valuetext', label)
     progress.hidden = !active && !this.model.preparing
     element('setup-progress-label').hidden = progress.hidden
   }

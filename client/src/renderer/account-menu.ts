@@ -1,6 +1,7 @@
 import type { CollaborationModel } from './collaboration-model'
 import { button, element, text } from './dom'
 import { AccountAvatar } from './account-avatar'
+import { uiAttribute, uiText } from './i18n-dom'
 
 /** Account identity only: opening this menu never authorizes or discovers projects. */
 export class AccountMenu {
@@ -24,7 +25,7 @@ export class AccountMenu {
     })
     element('account-toggle').addEventListener('click', this.toggle)
     element('account-menu').addEventListener('keydown', this.keyboard)
-    for (const id of ['setup-open', 'about-open']) button(id, () => this.close())
+    for (const id of ['setup-open', 'about-open', 'language-open', 'update-open']) button(id, () => this.close())
     document.addEventListener('pointerdown', this.outside)
     this.update()
   }
@@ -32,15 +33,15 @@ export class AccountMenu {
   update(): void {
     if (this.disposed) return
     const account = this.model.account, name = account?.name?.trim() || account?.login || '离线使用'
-    text('account-label', account?.login || '未登录')
-    text('account-name', name)
+    if (account) { text('account-label', account.login); text('account-name', name) }
+    else { uiText(element('account-label'), '未登录'); uiText(element('account-name'), '离线使用') }
     text('account-initial', account ? (Array.from(name)[0] || '?').toLocaleUpperCase() : '')
     this.avatar.update(account?.id ?? null)
     element('account-avatar').classList.toggle('is-guest', !account)
     element('account-menu').classList.toggle('is-signed-in', Boolean(account))
     const identity = account ? `已登录 ${name}（${account.login}）` : '未登录 · 账号与设置'
-    element('account-toggle').setAttribute('aria-label', identity)
-    element('account-toggle').title = identity
+    uiAttribute(element('account-toggle'), 'aria-label', identity)
+    uiAttribute(element('account-toggle'), 'title', identity)
   }
 
   setClosing(closing: boolean): void {

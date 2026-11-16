@@ -1,6 +1,7 @@
 import type { ProjectFile } from '../shared/workspace-contracts'
 import { element } from './dom'
 import { createFileIcon } from './file-icons'
+import { uiText } from './i18n-dom'
 
 interface FileNode { name: string; path: string; children: Map<string, FileNode>; file?: ProjectFile }
 interface ExpansionState { projectKey: string; active: string; collapsed: Set<string> }
@@ -14,12 +15,12 @@ export function renderFiles(files: ProjectFile[], active: string, open: (path: s
   const directories = new Set<string>()
   tree.replaceChildren(...renderChildren(root, state, open, directories))
   if (!root.children.size) {
-    const empty = document.createElement('li'); empty.className = 'empty'; empty.textContent = '项目中暂无可见文件。'
+    const empty = document.createElement('li'); empty.className = 'empty'; uiText(empty, '项目中暂无可见文件。')
     tree.append(empty)
   }
   for (const path of state.collapsed) if (!directories.has(path)) state.collapsed.delete(path)
   const count = files.filter(file => file.kind !== 'directory').length
-  element('file-count').textContent = `${count} 个文件${directories.size ? ` · ${directories.size} 个文件夹` : ''}`
+  uiText(element('file-count'), `${count} 个文件${directories.size ? ` · ${directories.size} 个文件夹` : ''}`)
 }
 
 function expansionState(tree: HTMLElement, projectKey: string, active: string): ExpansionState {
@@ -74,7 +75,7 @@ function directoryContents(node: FileNode, state: ExpansionState, open: (path: s
   button.setAttribute('aria-controls', children.id); button.setAttribute('aria-expanded', String(!children.hidden))
   children.append(...renderChildren(node, state, open, directories))
   if (!node.children.size) {
-    const empty = document.createElement('li'); empty.className = 'file-tree-empty'; empty.textContent = '空文件夹'
+    const empty = document.createElement('li'); empty.className = 'file-tree-empty'; uiText(empty, '空文件夹')
     children.append(empty)
   }
   button.addEventListener('click', () => {

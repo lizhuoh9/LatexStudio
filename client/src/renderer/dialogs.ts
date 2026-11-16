@@ -1,4 +1,5 @@
 import { element } from './dom'
+import { uiText } from './i18n-dom'
 
 export class Dialogs {
   private pending = false
@@ -7,8 +8,8 @@ export class Dialogs {
     if (this.pending) return false
     this.pending = true
     const dialog = element<HTMLDialogElement>('confirm-dialog')
-    element('confirm-title').textContent = title
-    element('confirm-detail').textContent = detail
+    uiText(element('confirm-title'), title)
+    uiText(element('confirm-detail'), detail)
     dialog.returnValue = 'cancel'
     dialog.showModal()
     try { return await this.closed(dialog) === 'accept' }
@@ -20,7 +21,7 @@ export class Dialogs {
     this.pending = true
     const dialog = element<HTMLDialogElement>('input-dialog')
     const field = element<HTMLInputElement>('input-value')
-    element('input-title').textContent = title
+    uiText(element('input-title'), title)
     field.value = value
     dialog.returnValue = 'cancel'
     dialog.showModal()

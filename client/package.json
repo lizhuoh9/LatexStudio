@@ -1,6 +1,6 @@
 {
   "name": "paperstudio-client",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "private": true,
   "description": "LatexStudio: local LaTeX projects, PDF preview and safe GitHub synchronization.",
   "license": "AGPL-3.0-only",
@@ -21,7 +21,7 @@
     "dist:win": "npm run prepare:tex-runtime && npm run build && electron-builder --win nsis portable --x64",
     "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --x64",
     "dist:mac:test": "node scripts/build-macos-test.cjs",
-    "test:mac-contracts": "vitest run tests/mac-desktop.test.ts tests/macos-build.test.ts tests/app-icon.test.ts tests/workspace-window.test.ts tests/editor-",
+    "test:mac-contracts": "vitest run tests/mac-desktop.test.ts tests/macos-build.test.ts tests/app-icon.test.ts tests/workspace-window.test.ts tests/locale-preferences.test.ts tests/shared-i18n.test.ts tests/editor-",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb --x64",
     "test:versions-ui": "npm run build && node scripts/smoke-versions.cjs",
     "test:cloud-ui": "npm run build && node scripts/smoke-cloud.cjs",

@@ -1,0 +1,9 @@
+#language-dialog label { display: block; margin: 18px 0 8px; }
+#language-select { width: 100%; min-height: 38px; padding: 7px 10px; }
+#language-status { white-space: pre-wrap; overflow-wrap: anywhere; }
+html[lang="ko"] body { font-family: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; }
+html[lang="en"] .project-actions, html[lang="ko"] .project-actions { flex-wrap: wrap; }
+html[lang="en"] .project-actions button, html[lang="ko"] .project-actions button { white-space: normal; }
+html[lang="en"] .account-menu-panel button, html[lang="ko"] .account-menu-panel button { white-space: normal; text-align: left; }
+html[lang="en"] .preview-toolbar .compile-actions, html[lang="ko"] .preview-toolbar .compile-actions { flex-wrap: wrap; }
+html[lang="en"] .advanced-compile summary, html[lang="ko"] .advanced-compile summary { white-space: nowrap; }

@@ -7,23 +7,41 @@ vi.mock('../src/main/tex/prepare', () => ({ findPreparedTex: state.find, prepare
 vi.mock('../src/main/tex/bundled-runtime', () => ({ findBundledTexArchive: state.bundle }))
 import { installWorkspaceMenu } from '../src/main/workspace/menu'
 import { TexSetupController } from '../src/main/tex/controller'
+import { setLocale, translate } from '../src/shared/i18n'
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
-beforeEach(() => { vi.clearAllMocks(); state.build.mockReturnValue({ native: true }) })
-afterEach(() => { Object.defineProperty(process, 'platform', platform) })
+beforeEach(() => { vi.clearAllMocks(); setLocale('zh-CN'); state.build.mockReturnValue({ native: true }) })
+afterEach(() => { setLocale('zh-CN'); Object.defineProperty(process, 'platform', platform) })
 
 describe('macOS editing contracts (not a real Mac execution test)', () => {
   it('provides native app/Edit/Window roles and a normal window-close action', () => {
     installWorkspaceMenu('darwin')
     expect(state.build).toHaveBeenCalledWith([
-      { label: 'LatexStudio', submenu: [{ role: 'about', label: '关于 LatexStudio' }, { type: 'separator' },
-        { role: 'services' }, { type: 'separator' }, { role: 'hide', label: '隐藏 LatexStudio' },
-        { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: '退出 LatexStudio' }] },
+      { label: 'LatexStudio', submenu: expect.arrayContaining([
+        { role: 'about', label: '关于 LatexStudio' }, { role: 'services', label: '服务' },
+        { role: 'hide', label: '隐藏 LatexStudio' }, { role: 'quit', label: '退出 LatexStudio' }
+      ]) },
       { label: '文件', submenu: [{ role: 'close', label: '关闭窗口', accelerator: 'CmdOrCtrl+W' }] },
-      { role: 'editMenu' }, { role: 'windowMenu' }
+      { role: 'editMenu', label: '编辑', submenu: expect.arrayContaining([
+        { role: 'undo', label: '撤销' }, { role: 'redo', label: '重做' },
+        { role: 'copy', label: '复制' }, { role: 'paste', label: '粘贴' }, { role: 'selectAll', label: '全选' }
+      ]) },
+      { role: 'windowMenu', label: '窗口', submenu: expect.arrayContaining([
+        { role: 'minimize', label: '最小化' }, { role: 'zoom', label: '缩放' }, { role: 'front', label: '全部置于顶层' }
+      ]) }
     ])
     expect(state.set).toHaveBeenCalledWith({ native: true })
     // No custom click handler, process.exit, direct write or clipboard IPC bypasses the existing close handshake.
+    expect(JSON.stringify(state.build.mock.calls)).not.toContain('click')
+  })
+  it.each(['en', 'ko'] as const)('rebuilds native menu labels in %s without custom close/quit handlers', locale => {
+    setLocale(locale); installWorkspaceMenu('darwin')
+    expect(translate('文件')).not.toBe('文件')
+    expect(state.build).toHaveBeenCalledWith(expect.arrayContaining([
+      { label: translate('文件'), submenu: [{ role: 'close', label: translate('关闭窗口'), accelerator: 'CmdOrCtrl+W' }] },
+      expect.objectContaining({ role: 'editMenu', label: translate('编辑') }),
+      expect.objectContaining({ role: 'windowMenu', label: translate('窗口') })
+    ]))
     expect(JSON.stringify(state.build.mock.calls)).not.toContain('click')
   })
   it.each(['win32', 'linux'] as const)('preserves the existing menu policy on %s', value => {

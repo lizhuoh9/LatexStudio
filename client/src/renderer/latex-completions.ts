@@ -1,5 +1,6 @@
 import { snippetCompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
 import { environments } from '../vendor/ayakaleaf/environments'
+import { translate } from '../shared/i18n'
 
 /** Adapt upstream $1 placeholders for the standard CM6 snippet API. */
 export function adaptSnippet(source: string): string {
@@ -13,7 +14,7 @@ export function latexCompletions(context: CompletionContext): CompletionResult |
   return {
     from,
     options: [...environments].map(([name, source]) => snippetCompletion(adaptSnippet(source), {
-      label: `\\begin{${name}}`, detail: 'LaTeX 环境 · AyakaLeaf', type: 'keyword'
+      label: `\\begin{${name}}`, detail: translate('LaTeX 环境 · AyakaLeaf'), type: 'keyword'
     })),
     validFor: /^\\begin\{[a-zA-Z*]*$/
   }

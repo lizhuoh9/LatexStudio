@@ -4,6 +4,8 @@ import type { Documents } from './documents'
 import { button, element, text } from './dom'
 import type { RunAction } from './sync-panel'
 import { HistoryComparison } from './history-comparison'
+import { intlLocale, translate } from '../shared/i18n'
+import { uiText, uiAttribute, uiFormattedText, uiFormattedAttribute } from './i18n-dom'
 
 const KIND = { create: '创建', save: '保存修改', restore: '回退', external: '外部更改' }
 const MAX_ENTRIES = 300
@@ -19,7 +21,7 @@ function newestFirst(a: RevisionEntry, b: RevisionEntry): number {
 }
 function timestamp(date: string): string {
   const value = new Date(date)
-  return Number.isFinite(value.getTime()) ? value.toLocaleString() : date || '时间未知'
+  return Number.isFinite(value.getTime()) ? value.toLocaleString(intlLocale()) : date || translate('时间未知')
 }
 
 export class VersionPanel {
@@ -94,16 +96,19 @@ export class VersionPanel {
   private row(entry: RevisionEntry): HTMLLIElement {
     const row = document.createElement('li'), open = document.createElement('button')
     row.className = 'revision-event'; open.type = 'button'; open.className = 'revision-entry'; open.dataset.revisionId = entry.id
-    open.title = `${entry.path} · ${KIND[entry.kind]} · ${author(entry)} · ${entry.date}\n${entry.summary}`
-    open.setAttribute('aria-label', open.title)
+    uiFormattedAttribute(open, 'title', () => `${entry.path} · ${translate(KIND[entry.kind])} · ${translate(author(entry))} · ${entry.date}\n${entry.summary}`)
+    uiFormattedAttribute(open, 'aria-label', () => open.title)
     const metadata = document.createElement('span'), date = document.createElement('time'), who = document.createElement('span')
     metadata.className = 'revision-meta'; date.className = 'revision-time'; date.dateTime = entry.date
-    date.textContent = timestamp(entry.date); date.title = entry.date
-    who.className = 'revision-author'; who.textContent = entry.kind === 'external' ? '作者未知' : `${entry.id.startsWith('git:') ? '提交 · ' : ''}${entry.author}`
-    who.title = author(entry); metadata.append(date, who)
+    uiFormattedText(date, () => timestamp(entry.date)); date.title = entry.date
+    who.className = 'revision-author'
+    if (entry.kind === 'external') uiText(who, '作者未知')
+    else if (entry.id.startsWith('git:')) uiText(who, `提交 · ${entry.author}`)
+    else who.textContent = entry.author
+    uiAttribute(who, 'title', author(entry)); metadata.append(date, who)
     const changed = document.createElement('span'), path = document.createElement('span'), kind = document.createElement('span')
     changed.className = 'revision-file-row'; path.className = 'revision-path'; path.textContent = entry.path
-    kind.className = 'revision-kind'; kind.textContent = KIND[entry.kind]; changed.append(path, kind)
+    kind.className = 'revision-kind'; uiText(kind, KIND[entry.kind]); changed.append(path, kind)
     const summary = document.createElement('span'); summary.className = 'revision-summary'; summary.textContent = entry.summary; summary.hidden = !entry.summary
     open.append(metadata, changed, summary); row.append(open); this.buttons.set(entry.id, open)
     const project = this.project, generation = this.rowEpoch
@@ -126,7 +131,7 @@ export class VersionPanel {
     this.detail = null; this.selectedId = ''; this.selection()
     text('revision-status', message)
     for (const id of ['revision-description', 'revision-selected-time', 'revision-diff-summary']) text(id, '')
-    text('revision-file-name', '选择右侧版本查看修改')
+    uiText(element('revision-file-name'), '选择右侧版本查看修改')
     this.comparison.clear()
     for (const id of ['revision-restore', 'revision-previous-change', 'revision-next-change']) element<HTMLButtonElement>(id).disabled = true
     element<HTMLSelectElement>('revision-from').disabled = true
@@ -154,10 +159,10 @@ export class VersionPanel {
 
   private renderDetail(detail: RevisionDetail): void {
     const { entry, before, after } = detail, result = this.comparison.show(before, after)
-    text('revision-description', `${entry.path} · ${KIND[entry.kind]} · ${author(entry)} · ${entry.date}\n${entry.summary}`)
-    text('revision-file-name', entry.path); text('revision-selected-time', timestamp(entry.date))
-    text('revision-diff-summary', (result.initial ? '初始记录，无前版可比较' : `+${result.added} / −${result.removed}`) + (result.truncated ? ' · 仅显示部分内容' : ''))
-    text('revision-status', '所选版本 · ' + timestamp(entry.date))
+    uiFormattedText(element('revision-description'), () => `${entry.path} · ${translate(KIND[entry.kind])} · ${translate(author(entry))} · ${entry.date}\n${entry.summary}`)
+    text('revision-file-name', entry.path); uiFormattedText(element('revision-selected-time'), () => timestamp(entry.date))
+    uiFormattedText(element('revision-diff-summary'), () => (result.initial ? translate('初始记录，无前版可比较') : `+${result.added} / −${result.removed}`) + (result.truncated ? ' · ' + translate('仅显示部分内容') : ''))
+    uiFormattedText(element('revision-status'), () => translate('所选版本') + ' · ' + timestamp(entry.date))
     for (const id of ['revision-previous-change', 'revision-next-change']) element<HTMLButtonElement>(id).disabled = !(result.added + result.removed)
     element<HTMLButtonElement>('revision-restore').disabled = false
   }
@@ -172,7 +177,7 @@ export class VersionPanel {
     if (!paths.includes(this.selectedPath)) this.selectedPath = ''
     element('revision-files').replaceChildren(...paths.map(path => {
       const li = document.createElement('li'), open = document.createElement('button')
-      open.type = 'button'; open.textContent = path || '全部文件'; open.title = path
+      open.type = 'button'; if (path) open.textContent = path; else uiText(open, '全部文件'); open.title = path
       open.setAttribute('aria-current', String(path === this.selectedPath)); open.disabled = this.closing
       open.addEventListener('click', () => {
         if (this.closing || generation !== this.rowEpoch || project !== this.project || project !== this.documents.project) return
@@ -187,7 +192,12 @@ export class VersionPanel {
     const index = this.entries.findIndex(entry => entry.id === detail.entry.id)
     const values = [{ id: '', label: '上一次修改' }, ...this.entries.slice(index + 1)
       .filter(entry => entry.path === detail.entry.path).map(entry => ({ id: entry.id, label: timestamp(entry.date) }))]
-    select.replaceChildren(...values.map(value => { const option = document.createElement('option'); option.value = value.id; option.textContent = value.label; return option }))
+    select.replaceChildren(...values.map(value => {
+      const option = document.createElement('option'); option.value = value.id
+      const date = this.entries.find(entry => entry.id === value.id)?.date
+      if (date) uiFormattedText(option, () => timestamp(date)); else uiText(option, value.label)
+      return option
+    }))
     select.value = ''; select.disabled = this.closing
   }
 

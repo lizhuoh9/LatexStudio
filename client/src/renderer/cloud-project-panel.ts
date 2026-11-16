@@ -5,6 +5,8 @@ import type { Dialogs } from './dialogs'
 import type { RunAction } from './sync-panel'
 import { element, listItem, text } from './dom'
 import { readableError } from './editor-model'
+import { translate } from '../shared/i18n'
+import { localizeStaticHtml, uiText, uiAttribute, uiErrorValue, uiFormattedText, uiFormattedAttribute } from './i18n-dom'
 
 type Ticket = { project: ProjectInfo | null; version: number; path: string; epoch: number }
 const TEMPLATE = `
@@ -61,6 +63,7 @@ export class CloudProjectPanel {
     private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void,
     private setupSync?: (login: boolean) => void) {
     element('cloud-project-workspace').innerHTML = TEMPLATE
+    localizeStaticHtml(element('cloud-project-workspace'))
     this.bind('refresh', () => this.refresh())
     this.bind('authorization', async () => { await this.api!.openAuthorization() })
     this.bind('invitations-web', async () => { await this.api!.openInvitations() })
@@ -182,18 +185,21 @@ export class CloudProjectPanel {
 
   private failure(message: string, sync = false): void {
     this.syncError = sync
-    element<HTMLTextAreaElement>('cp-error-detail').value = message
+    uiErrorValue(element<HTMLTextAreaElement>('cp-error-detail'), message)
     text('cp-error-copy-status', '')
     element('cp-error').hidden = false
-    const summary = message.split('\n', 1)[0] ?? message
-    this.message(summary.length > 180 ? summary.slice(0, 180) + '…' : summary)
+    uiFormattedText(element('cp-message'), () => {
+      const summary = translate(message).split('\n', 1)[0] ?? ''
+      return summary.length > 180 ? summary.slice(0, 180) + '…' : summary
+    })
+    this.notify('操作未完成，请查看完整错误详情。')
     element('cp-error').focus()
   }
 
   private clearError(): void {
     this.syncError = false
     element('cp-error').hidden = true
-    element<HTMLTextAreaElement>('cp-error-detail').value = ''
+    uiErrorValue(element<HTMLTextAreaElement>('cp-error-detail'), '')
     text('cp-error-copy-status', '')
   }
 
@@ -225,7 +231,7 @@ export class CloudProjectPanel {
       }
       this.state = state; this.stateProject = ticket.project
       if (!state.autoSync || !state.signedIn) this.autoSession = false
-      text('cp-status', state.connection ? `${state.connection.owner}/${state.connection.name} · ${state.message}` : state.message)
+      uiFormattedText(element('cp-status'), () => state.connection ? `${state.connection.owner}/${state.connection.name} · ${translate(state.message)}` : translate(state.message))
     } catch {
       if (!this.valid(ticket) || request !== this.statusRequest) return
       this.state = null; this.stateProject = null; this.autoSession = false
@@ -267,10 +273,11 @@ export class CloudProjectPanel {
       : !this.state || this.stateProject !== project ? '同步状态待刷新'
       : !this.state.configured ? '登录未配置' : !this.state.signedIn ? '未登录'
       : !this.state.connection ? '未关联' : `${this.state.connection.owner}/${this.state.connection.name}`
-    node.title = project ? `同步当前论文“${project.name}” · ${reason}` : '选择论文后同步'
-    node.setAttribute('aria-label', project ? `同步当前论文 ${project.name}` : '同步当前论文')
-    text('project-sync-status', project ? `${project.name} · ${reason}` : '')
-    element<HTMLButtonElement>('cp-sync').title = node.title
+    const title = () => project ? `${translate(`同步当前论文“${project.name}”`)} · ${translate(reason)}` : translate('选择论文后同步')
+    uiFormattedAttribute(node, 'title', title)
+    uiAttribute(node, 'aria-label', project ? `同步当前论文 ${project.name}` : '同步当前论文')
+    uiFormattedText(status, () => project ? `${project.name} · ${translate(reason)}` : '')
+    uiFormattedAttribute(element('cp-sync'), 'title', title)
     text('project-settings', this.state?.signedIn && !this.state.connection ? '关联仓库' : '项目设置')
   }
 
@@ -285,12 +292,16 @@ export class CloudProjectPanel {
     if (!this.valid(ticket)) return
     if (!result.connected) this.createdUnlinked.add(ticket.project)
     await this.refresh()
-    if (this.valid(ticket)) this.message(result.connected ? result.message : `${result.message} 请先安装或授权应用，再刷新项目列表并关联已创建的项目；不会自动重复创建。`)
+    if (this.valid(ticket)) {
+      const instruction = '请先安装或授权应用，再刷新项目列表并关联已创建的项目；不会自动重复创建。'
+      this.message(result.connected ? result.message : `${result.message} ${instruction}`)
+      if (!result.connected) uiFormattedText(element('cp-message'), () => `${translate(result.message)} ${translate(instruction)}`)
+    }
   }
 
   private choice(label: string, action: () => Promise<void>, ticket: Ticket): HTMLButtonElement {
     const node = document.createElement('button')
-    node.type = 'button'; node.textContent = label; node.dataset.cpChoice = 'true'
+    node.type = 'button'; uiText(node, label); node.dataset.cpChoice = 'true'
     this.listen(node, () => { if (!node.disabled && this.valid(ticket, false)) this.dispatch(label, action, true) })
     return node
   }

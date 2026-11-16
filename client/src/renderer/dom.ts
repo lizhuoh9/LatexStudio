@@ -1,10 +1,16 @@
+import { forgetUiText, textIsLiteral, uiText } from './i18n-dom'
+
 export function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id)
   if (!value) throw new Error(`缺少界面元素：${id}`)
   return value as T
 }
 
-export function text(id: string, value: string): void { element(id).textContent = value }
+export function text(id: string, value: string): void {
+  const node = element(id)
+  if (textIsLiteral(id)) { forgetUiText(node); node.textContent = value }
+  else uiText(node, value)
+}
 
 export function button(id: string, handler: () => void): void {
   element<HTMLButtonElement>(id).addEventListener('click', handler)

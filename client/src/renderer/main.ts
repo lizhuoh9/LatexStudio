@@ -36,6 +36,9 @@ import { StartupDialog } from './startup-dialog'
 import { RepositoryTransferPanel } from './repository-transfer-panel'
 import { UpdatePanel } from './update-panel'
 import type { UpdateApi } from '../shared/update-contracts'
+import { LocalePanel, initializeLocalePreference } from './locale-panel'
+import { startDomLocalization, uiAttribute, uiText } from './i18n-dom'
+import './i18n-style.css'
 
 declare global { interface Window { paperstudio: WorkspaceApi } }
 
@@ -62,6 +65,7 @@ class Workbench {
   private library: ProjectLibraryPanel
   private repositoryTransfer: RepositoryTransferPanel
   private updates: UpdatePanel
+  private language: LocalePanel
   private dialogs = new Dialogs()
   private documents: Documents
   private editor: SourceEditor
@@ -106,7 +110,10 @@ class Workbench {
       project => this.adopt(project), message => this.notify(message), () => this.showEditor())
     this.repositoryTransfer = new RepositoryTransferPanel(api)
     this.updates = new UpdatePanel((window as Window & { paperstudioUpdates?: UpdateApi }).paperstudioUpdates)
+    this.language = new LocalePanel()
     window.addEventListener('unload', () => {
+      this.language.dispose()
+      this.editor.destroy()
       this.startup?.dispose()
       this.layout.dispose()
       this.sync.dispose()
@@ -316,7 +323,8 @@ class Workbench {
 
   private renderDocument(buffer: EditorBuffer): void {
     this.outline?.update(buffer.content)
-    text('active-file', buffer.path || '源文件')
+    if (buffer.path) text('active-file', buffer.path)
+    else uiText(element('active-file'), '源文件')
     text('save-state', buffer.path ? (buffer.dirty ? '● 未保存' : '已保存到本地') : '未打开文件')
     element('save-state').classList.toggle('dirty', buffer.dirty)
     element('external-warning').hidden = !buffer.conflict
@@ -340,9 +348,9 @@ class Workbench {
   private compileIdentity(): void {
     const main = element<HTMLSelectElement>('main-file').value
     const compile = element<HTMLButtonElement>('compile')
-    compile.textContent = main ? `▶ 编译 ${main.split('/').at(-1)}` : '▶ 编译'
-    compile.title = main ? `主文件：${main} · 项目根目录：${this.documents.project?.root ?? ''}` : '请先打开含有主文件的论文项目'
-    compile.setAttribute('aria-label', main ? `编译主文件 ${main}` : '编译论文')
+    uiText(compile, main ? `▶ 编译 ${main.split('/').at(-1)}` : '▶ 编译')
+    uiAttribute(compile, 'title', main ? `主文件：${main} · 项目根目录：${this.documents.project?.root ?? ''}` : '请先打开含有主文件的论文项目')
+    uiAttribute(compile, 'aria-label', main ? `编译主文件 ${main}` : '编译论文')
   }
 
   private async compile(): Promise<void> {
@@ -389,6 +397,7 @@ class Workbench {
     this.library.setClosing(closing)
     this.repositoryTransfer.setClosing(closing)
     this.updates.setClosing(closing)
+    this.language.setClosing(closing)
     if (closing) {
       for (const node of [document.body, element('editor-panel'), ...document.querySelectorAll<HTMLDialogElement>('dialog')]) {
         this.frozen.set(node, node.inert)
@@ -428,5 +437,11 @@ class Workbench {
   }
 }
 
-if (typeof window.paperstudio?.project === 'function') new Workbench(window.paperstudio)
-else { text('status', '无法连接本机工作区。请通过 LatexStudio 桌面应用启动。'); element('status').hidden = false }
+async function startWorkbench(): Promise<void> {
+  await initializeLocalePreference(window.paperstudioPreferences)
+  const disposeLocalization = startDomLocalization()
+  window.addEventListener('unload', disposeLocalization, { once: true })
+  if (typeof window.paperstudio?.project === 'function') new Workbench(window.paperstudio)
+  else { text('status', '无法连接本机工作区。请通过 LatexStudio 桌面应用启动。'); element('status').hidden = false }
+}
+void startWorkbench()

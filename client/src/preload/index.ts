@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { PREFERENCES_CHANNELS as L, isUiLocale, type PreferencesApi, type PreferencesState } from '../shared/locale-contracts'
 import { UPDATE_CHANNELS as U, type UpdateApi, type UpdateState } from '../shared/update-contracts'
 import { CLOUD_CHANNELS as G, type CloudApi } from '../shared/cloud-contracts'
 import { PROJECT_LIBRARY_CHANNELS as P, type ProjectLibraryApi } from '../shared/project-library-contracts'
@@ -39,6 +40,18 @@ const api: WorkspaceApi = Object.freeze<WorkspaceApi>({
 })
 
 contextBridge.exposeInMainWorld('paperstudio', api)
+const preferences: PreferencesApi = Object.freeze<PreferencesApi>({
+  get: () => ipcRenderer.invoke(L.get),
+  set: locale => ipcRenderer.invoke(L.set, locale),
+  onChanged: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, state: PreferencesState): void => {
+      if (state && isUiLocale(state.locale)) listener({ locale: state.locale })
+    }
+    ipcRenderer.on(L.changed, handler)
+    return () => { ipcRenderer.removeListener(L.changed, handler) }
+  }
+})
+contextBridge.exposeInMainWorld('paperstudioPreferences', preferences)
 const updates: UpdateApi = Object.freeze<UpdateApi>({
   status: () => ipcRenderer.invoke(U.status), check: () => ipcRenderer.invoke(U.check),
   openReleases: () => ipcRenderer.invoke(U.releases),

@@ -1,4 +1,4 @@
-import { EditorState, Transaction, type Extension } from '@codemirror/state'
+import { Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, foldGutter, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
@@ -7,10 +7,14 @@ import { searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codem
 import { stex } from '@codemirror/legacy-modes/mode/stex'
 import { latexIndentService } from '../vendor/ayakaleaf/latex-indent-service'
 import { latexCompletions } from './latex-completions'
+import { subscribeLocale, translate } from '../shared/i18n'
+import { editorPhrases } from './editor-phrases'
 
 export class SourceEditor {
   private view: EditorView
   private loading = false
+  private language = new Compartment()
+  private unsubscribeLocale: () => void
   private extensions: Extension[]
 
   constructor(parent: HTMLElement, changed: (content: string) => void, save: () => void) {
@@ -24,13 +28,21 @@ export class SourceEditor {
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !this.loading) changed(update.state.doc.toString())
       }),
-      EditorView.contentAttributes.of({ 'aria-label': '本地源文件编辑器', spellcheck: 'false' }),
+      this.language.of(this.languageExtensions()),
       EditorView.theme({ '&': { height: '100%', fontSize: '13px' },
         '.cm-scroller': { overflow: 'auto', fontFamily: 'Consolas, "Cascadia Code", monospace' },
         '.cm-content': { padding: '12px 0' }, '.cm-gutters': { backgroundColor: '#f7f8fa', border: 'none' },
         '&.cm-focused': { outline: 'none' } })
     ]
     this.view = new EditorView({ parent, state: this.state('', true) })
+    this.unsubscribeLocale = subscribeLocale(() => {
+      this.view.dispatch({ effects: this.language.reconfigure(this.languageExtensions()), annotations: Transaction.addToHistory.of(false) })
+    })
+  }
+
+  private languageExtensions(): Extension {
+    return [EditorState.phrases.of(editorPhrases()),
+      EditorView.contentAttributes.of({ 'aria-label': translate('本地源文件编辑器'), spellcheck: 'false' })]
   }
 
   private state(content: string, readOnly: boolean): EditorState {
@@ -65,5 +77,5 @@ export class SourceEditor {
   }
 
   focus(): void { this.view.focus() }
-  destroy(): void { this.view.destroy() }
+  destroy(): void { this.unsubscribeLocale(); this.view.destroy() }
 }

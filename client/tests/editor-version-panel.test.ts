@@ -25,7 +25,7 @@ const dom = vi.hoisted(() => {
       get textContent() { return ownText + this.children.map(node => node.textContent).join('') },
       set textContent(value: string) { ownText = value; this.children = [] },
       addEventListener(name, handler) { this.listeners.set(name, handler) },
-      setAttribute(name, value) { this.attributes.set(name, value) },
+      setAttribute(name, value) { this.attributes.set(name, value); if (name === 'title') this.title = value },
       removeAttribute(name) { this.attributes.delete(name) }, scrollIntoView() {}, focus() {},
       append(...children) { this.children.push(...children) },
       replaceChildren(...children) { this.children = children },

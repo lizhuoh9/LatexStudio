@@ -13,6 +13,10 @@ Get versioned packages from [GitHub Releases](https://github.com/lizhuoh9/LatexS
 
 The display name is LatexStudio. The historical package/application identifiers and resource filenames are retained internally for compatibility; existing data must not be deleted to upgrade.
 
+## Interface languages
+
+The complete application UI supports **简体中文 / English / 한국어**. Open the account/avatar menu → **Language / 语言 / 언어**; the choice applies immediately and persists across restarts. Paper text, filenames, identities, original revision notes and compiler output are preserved. Language changes do not sign in, synchronize, compile or rewrite a draft. See the [trilingual interface guide](docs/INTERFACE-LANGUAGES.md) for scope and operating-system controls.
+
 ## Workbench
 
 An independent project homepage opens a single-paper editor: files and chapter outline on the left, source in the middle, PDF/compile on the right, an independent read-only History mode with recorded files, central colored source comparison and a right-side timeline. Sync is scoped to the current paper. Logs can be opened/closed without covering the file outline.

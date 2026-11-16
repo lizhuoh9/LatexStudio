@@ -4,6 +4,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import './pdf-preview-style.css'
 import { element, text } from './dom'
 import { readableError } from './editor-model'
+import { uiAttribute } from './i18n-dom'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -111,7 +112,7 @@ export class PdfPreview {
     this.slots = Array.from({ length: count }, (_, index) => {
       const node = window.document.createElement('div')
       node.className = 'pdf-page'; node.dataset.pdfPage = String(index + 1)
-      node.setAttribute('role', 'img'); node.setAttribute('aria-label', `PDF 第 ${index + 1} 页`)
+      node.setAttribute('role', 'img'); uiAttribute(node, 'aria-label', `PDF 第 ${index + 1} 页`)
       return { node, number: index + 1, top: 0, width: 0, height: 0, ratio: null, canvas: null, page: null, rendered: -1, failed: -1 }
     })
     this.host.replaceChildren(...this.slots.map(slot => slot.node))
