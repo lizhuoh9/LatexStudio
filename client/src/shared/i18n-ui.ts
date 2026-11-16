@@ -293,6 +293,7 @@ export const UI_TRANSLATIONS = [
   ['仅回退此文件至所选版本？', 'Restore only this file to the selected version?', '이 파일만 선택한 버전으로 복원하시겠습니까?'],
   ['断开此项目的开发者关联？', 'Remove this project’s developer connection?', '이 프로젝트의 개발자 연결을 해제하시겠습니까?'],
   ['确认同步这些本地文件？', 'Sync these local files?', '이 로컬 파일들을 동기화하시겠습니까?'],
+  ['跳转源文件', 'Jump to source', '소스 파일로 이동'],
 ] as const
 
 /** Numbered placeholders carry raw names/paths; never translate their contents. */

@@ -6,6 +6,8 @@ import { uiText } from './i18n-dom'
 interface FileNode { name: string; path: string; children: Map<string, FileNode>; file?: ProjectFile }
 interface ExpansionState { projectKey: string; active: string; collapsed: Set<string> }
 const expansions = new WeakMap<HTMLElement, ExpansionState>()
+// One collator for every comparison; identical ordering to localeCompare(name, 'zh-CN') without a per-call lookup.
+const NAME_ORDER = new Intl.Collator('zh-CN')
 let childListId = 0
 
 export function renderFiles(files: ProjectFile[], active: string, open: (path: string) => void, projectKey = ''): void {
@@ -49,7 +51,7 @@ function addFile(root: FileNode, file: ProjectFile): void {
 
 function renderChildren(parent: FileNode, state: ExpansionState, open: (path: string) => void, directories: Set<string>): HTMLLIElement[] {
   return [...parent.children.values()]
-    .sort((a, b) => Number(!!a.file) - Number(!!b.file) || a.name.localeCompare(b.name, 'zh-CN'))
+    .sort((a, b) => Number(!!a.file) - Number(!!b.file) || NAME_ORDER.compare(a.name, b.name))
     .map(node => {
       const item = document.createElement('li'); item.className = node.file ? 'file-tree-file' : 'file-tree-directory'
       if (node.file) item.append(fileButton(node, state.active, open))

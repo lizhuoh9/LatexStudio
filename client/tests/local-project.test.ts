@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -66,6 +66,23 @@ describe('explicit GUI directory listings', () => {
     expect(await safe.list()).toEqual([{ path: 'chapters/main.tex', kind: 'text', size: 5 }])
     expect(await safe.list(false)).toEqual(await safe.list())
     expect(await safe.list('true' as unknown as boolean)).toEqual(await safe.list())
+  })
+  it('hands each listed entry the lstat sample that classified it, for files and requested directories only', async () => {
+    const { root } = await fixture(), safe = new SafeProject(root)
+    await mkdir(join(root, 'chapters')); await mkdir(join(root, 'empty'))
+    await writeFile(join(root, 'chapters/main.tex'), 'paper'); await writeFile(join(root, 'figure.png'), 'png')
+    await safe.initialize()
+    const seen = new Map<string, { ino: number; size: number; mtimeMs: number; directory: boolean }>()
+    const files = await safe.list(true, (file, info) => seen.set(file.path, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, directory: info.isDirectory() }))
+    expect(files.map(file => file.path)).toEqual(['chapters', 'chapters/main.tex', 'empty', 'figure.png'])
+    expect([...seen.keys()].sort()).toEqual(files.map(file => file.path))
+    for (const file of files) {
+      const actual = await lstat(join(root, file.path))
+      expect(seen.get(file.path)).toEqual({ ino: actual.ino, size: actual.size, mtimeMs: actual.mtimeMs, directory: file.kind === 'directory' })
+    }
+    const only: string[] = []
+    expect(await safe.list(false, file => { only.push(file.path) })).toEqual(await safe.list())
+    expect(only.sort()).toEqual(['chapters/main.tex', 'figure.png'])
   })
   it('never selects a directory ending in .tex as the main document', async () => {
     const { root, project } = await fixture()

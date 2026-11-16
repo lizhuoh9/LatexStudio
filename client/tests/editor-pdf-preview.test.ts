@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 const api = vi.hoisted(() => ({ getDocument: vi.fn(), worker: { workerSrc: '' }, element: vi.fn(), text: vi.fn() }))
-vi.mock('pdfjs-dist', () => ({ getDocument: api.getDocument, GlobalWorkerOptions: api.worker }))
+vi.mock('pdfjs-dist', () => ({ getDocument: api.getDocument, GlobalWorkerOptions: api.worker, TextLayer: null }))
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'owned-fixture-worker' }))
 vi.mock('../src/renderer/dom', () => ({ element: api.element, text: api.text }))
 import { PdfPreview, PDF_PREVIEW_LIMITS } from '../src/renderer/pdf-view'
@@ -16,12 +16,29 @@ function deferred<T>(): Deferred<T> {
 }
 class NodeMock {
   hidden = false; textContent = ''; className = ''; width = 0; height = 0
-  clientWidth = 640; clientHeight = 700; scrollTop = 0; scrollLeft = 0
+  clientWidth = 640; clientHeight = 700; scrollWidth = 640; scrollHeight = 700; scrollTop = 0; scrollLeft = 0; offsetLeft = 0
   style: Record<string, string> = {}; dataset: Record<string, string> = {}; attributes = new Map<string, string>()
   children: NodeMock[] = []; handlers = new Map<string, Set<(event?: unknown) => void>>()
-  classList = { add: (name: string) => { this.className += ` ${name}` } }
+  rect = { left: 0, top: 0, width: 600, height: 800 }
+  classSet = new Set<string>()
+  classList = {
+    add: (name: string) => { this.classSet.add(name); this.className = [...this.classSet].join(' ') },
+    remove: (name: string) => { this.classSet.delete(name); this.className = [...this.classSet].join(' ') },
+    toggle: (name: string, force?: boolean) => {
+      const next = force ?? !this.classSet.has(name)
+      if (next) this.classSet.add(name); else this.classSet.delete(name)
+      this.className = [...this.classSet].join(' '); return next
+    }
+  }
   constructor(readonly tagName: string) {}
-  closest(): NodeMock | null { return scroller }
+  closest(selector?: string): NodeMock | null {
+    return selector === '.pdf-page' && (this.classSet.has('pdf-page') || this.className.split(/\s+/).includes('pdf-page')) ? this : scroller
+  }
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
+    return this.classSet.has('pdf-page') || this.className.split(/\s+/).includes('pdf-page')
+      ? { left: 20, top: 24, width: parseFloat(this.style.width || '600'), height: parseFloat(this.style.height || '800') }
+      : { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight }
+  }
   replaceChildren(...nodes: NodeMock[]): void { this.children = nodes }
   setAttribute(name: string, value: string): void { this.attributes.set(name, value) }
   addEventListener(name: string, listener: (event?: unknown) => void): void {
@@ -240,5 +257,72 @@ describe('continuous local canvas PDF preview', () => {
     expect(options).not.toHaveProperty('url')
     expect(host.children.every(node => node.tagName === 'div' && node.children.every(child => child.tagName === 'canvas'))).toBe(true)
     expect(readFileSync('src/renderer/pdf-preview-style.css', 'utf8')).not.toMatch(/@import|@font-face|url\(/)
+  })
+  it('only pans when holding Ctrl/Meta so plain drag selects words and dblclick jumps cleanly', async () => {
+    await open(3); await preview!.scale(.5)
+    expect(scroller.classSet.has('can-pan')).toBe(true)
+    expect(scroller.classSet.has('ctrl-pan-mode')).toBe(false)
+    scroller.scrollLeft = 20; scroller.scrollTop = 40
+    // Plain drag without Ctrl/Meta must NOT pan (preserves PDF word/text selection)
+    scroller.emit('pointerdown', { button: 0, ctrlKey: false, metaKey: false, pointerId: 1, clientX: 200, clientY: 200 })
+    browser.emit('pointermove', { ctrlKey: false, metaKey: false, pointerId: 1, clientX: 120, clientY: 120 })
+    expect(scroller.classSet.has('is-panning')).toBe(false)
+    expect(scroller.scrollLeft).toBe(20); expect(scroller.scrollTop).toBe(40)
+    browser.emit('pointerup', { pointerId: 1 })
+    // Holding Ctrl activates pan cursor; tiny < 4px movement stays idle for Ctrl+click
+    browser.emit('keydown', { ctrlKey: true, metaKey: false })
+    expect(scroller.classSet.has('ctrl-pan-mode')).toBe(true)
+    scroller.emit('pointerdown', { button: 0, ctrlKey: true, metaKey: false, pointerId: 2, clientX: 200, clientY: 200 })
+    browser.emit('pointermove', { ctrlKey: true, metaKey: false, pointerId: 2, clientX: 202, clientY: 201 })
+    expect(scroller.classSet.has('is-panning')).toBe(false)
+    expect(scroller.scrollLeft).toBe(20); expect(scroller.scrollTop).toBe(40)
+    // Dragging past 4px while holding Ctrl pans smoothly and clears on release
+    browser.emit('pointermove', { ctrlKey: true, metaKey: false, pointerId: 2, clientX: 150, clientY: 160 })
+    expect(scroller.classSet.has('is-panning')).toBe(true)
+    expect(scroller.scrollLeft).toBe(70); expect(scroller.scrollTop).toBe(80)
+    browser.emit('pointerup', { pointerId: 2 })
+    browser.emit('keyup', { ctrlKey: false, metaKey: false })
+    expect(scroller.classSet.has('is-panning')).toBe(false)
+    expect(scroller.classSet.has('ctrl-pan-mode')).toBe(false)
+  })
+  it('translates PDF double-click coordinates into PDF big points and highlights jumpTo targets clearly', async () => {
+    const onDbl = vi.fn(), pdf = source(4, 600, 800)
+    api.getDocument.mockReturnValue(pdf.loading)
+    preview = new PdfPreview(notify, onDbl)
+    await preview.show(new Uint8Array([1, 2]))
+    await preview.scale(.5)
+    const page1 = host.children[0]!
+    const renderedWidth = parseFloat(page1.style.width!), renderedHeight = parseFloat(page1.style.height!)
+    scroller.emit('dblclick', { target: page1, clientX: 20 + renderedWidth * 0.5, clientY: 24 + renderedHeight * 0.25 })
+    await flush()
+    expect(onDbl).toHaveBeenCalledOnce()
+    expect(onDbl.mock.calls[0]![0]).toMatchObject({ page: 1, x: expect.closeTo(300, 1), y: expect.closeTo(200, 1) })
+
+    await preview.jumpTo({ page: 3, x: 120, y: 320, width: 10, height: 10 })
+    expect(position.textContent).toContain('3 / 4')
+    const hl = host.children[2]!.children.find(child => child.className.includes('pdf-sync-highlight'))
+    expect(hl).toBeDefined()
+    expect(parseFloat(hl!.style.width!)).toBeGreaterThanOrEqual(24)
+    expect(parseFloat(hl!.style.height!)).toBeGreaterThanOrEqual(16)
+  })
+  it('refines jumpTo highlight onto the exact matched word when PDF text content is available', async () => {
+    const pdf = source(2, 600, 800)
+    const page1 = pdf.page(1) as ReturnType<typeof pdf.page> & { getTextContent?: () => Promise<unknown> }
+    page1.getViewport = vi.fn(({ scale }: { scale: number }) => ({
+      width: 600 * scale,
+      height: 800 * scale,
+      convertToViewportPoint: (x: number, y: number) => [x * scale, (800 - y) * scale]
+    }))
+    page1.getTextContent = vi.fn(async () => ({
+      items: [{ str: 'Soft actuators and soft robots', transform: [1, 0, 0, 1, 100, 600], width: 200, height: 12 }]
+    }))
+    api.getDocument.mockReturnValue(pdf.loading)
+    preview = new PdfPreview(notify)
+    await preview.show(new Uint8Array([1, 2]))
+    await preview.jumpTo({ page: 1, x: 150, y: 190, width: 44, height: 12 }, 'actuators')
+    const hl = host.children[0]!.children.find(child => child.className.includes('pdf-sync-highlight'))
+    expect(hl).toBeDefined()
+    // 'actuators' is chars [5..14] out of 30 in width 200 -> roughly 60bp wide vs full 200bp line
+    expect(parseFloat(hl!.style.width!)).toBeLessThan(100)
   })
 })

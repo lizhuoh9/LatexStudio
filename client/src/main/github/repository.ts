@@ -4,7 +4,7 @@ import git, { type HttpClient } from 'isomorphic-git'
 import type { GitHubConnection, GitHubSettings, HistoryEntry, RepositoryStatus, SyncResult } from '../../shared/workspace-contracts'
 import { CredentialVault } from './credentials'
 import { rememberOperationDiagnostic, readOperationDiagnostic } from './operation-diagnostic'
-import { assertProjectDirectory, checkCheckout, headOid, validateTree, workingFiles } from './files'
+import { assertProjectDirectory, checkCheckout, headOid, validateTree, workingFiles, type GitReadCache } from './files'
 import { ensureRepository, localChanges, localHistory, saveSnapshot } from './local-history'
 import { emptyMetadata, readMetadata, writeMetadata, type RepositoryMetadata } from './metadata'
 import { githubTarget, GitHubError, publicError, sameRepository } from './policy'
@@ -307,10 +307,10 @@ export class GitHubRepository {
   private async validateOutgoingHistory(scope: RepositoryOperationScope): Promise<void> {
     const entries = await scope.step(() => git.log({ fs, dir: this.root, depth: 1000 }))
     if (entries.length >= 1000) throw new GitHubError('历史过长，无法在安全限额内检查；本地快照已保留。')
-    const inspected = new Set<string>()
+    const inspected = new Set<string>(), cache: GitReadCache = {} // one pass over this history, nothing written in between
     for (const entry of entries) {
       scope.check()
-      if (!inspected.has(entry.commit.tree)) await scope.step(() => validateTree(this.root, entry.oid))
+      if (!inspected.has(entry.commit.tree)) await scope.step(() => validateTree(this.root, entry.oid, cache))
       inspected.add(entry.commit.tree)
     }
   }

@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import git from 'isomorphic-git'
 import { afterEach, expect, it, vi } from 'vitest'
 import { GitVersions } from '../src/main/github/git-versions'
-import { digest, LIMITS } from '../src/main/local/paths'
+import { validateTree } from '../src/main/github/files'
+import { digest, LIMITS, SafeProject } from '../src/main/local/paths'
 
 const folders: string[] = []
 const alice = { name: 'Alice', email: 'alice@example.invalid', timestamp: 1_700_000_000, timezoneOffset: 0 }
@@ -201,4 +202,52 @@ it('fails closed when the Git library rejects a traversal path encoded in a real
   const tree = await git.writeTree({ fs, dir: root, tree: [{ mode: '100644', type: 'blob', path: '..', oid: blob }] })
   await pointHead(root, await rawCommit(root, tree, []))
   await expect(new GitVersions(root).list()).rejects.toThrow('unsafe')
+})
+
+it('reads each list or detail pass through one object cache and never shares it between passes', async () => {
+  const root = await folder()
+  await commit(root, { 'main.tex': 'first', 'sections/a.tex': 'section' })
+  const second = await commit(root, { 'main.tex': 'second' }, bob)
+  const reads = [vi.spyOn(git, 'readCommit'), vi.spyOn(git, 'readTree'), vi.spyOn(git, 'readBlob')]
+  const caches = (): unknown[] => reads.flatMap(spy => spy.mock.calls.map(([options]) => (options as { cache?: unknown }).cache))
+  const versions = new GitVersions(root)
+  expect((await versions.list()).map(entry => [entry.path, entry.kind])).toEqual([['main.tex', 'save'], ['main.tex', 'create'], ['sections/a.tex', 'create']])
+  const listed = caches()
+  expect(listed.length).toBeGreaterThan(6); expect(new Set(listed).size).toBe(1); expect(listed[0]).toEqual(expect.any(Object))
+  for (const spy of reads) spy.mockClear()
+  expect(await versions.detail(id(second, 'main.tex'))).toMatchObject({ before: 'first', after: 'second' })
+  const detailed = caches()
+  expect(detailed.length).toBeGreaterThan(2); expect(new Set(detailed).size).toBe(1); expect(detailed[0]).not.toBe(listed[0])
+})
+
+it('validates a commit tree through the supplied pass cache, or a private cache for a single call', async () => {
+  const root = await folder()
+  const oid = await commit(root, { 'main.tex': 'paper', 'sections/a.tex': 'section', 'sections/deep/b.tex': 'deep' })
+  const reads = [vi.spyOn(git, 'readCommit'), vi.spyOn(git, 'readTree')]
+  const caches = (): unknown[] => reads.flatMap(spy => spy.mock.calls.map(([options]) => (options as { cache?: unknown }).cache))
+  const shared = {}
+  expect((await validateTree(root, oid, shared)).sort()).toEqual(['main.tex', 'sections/a.tex', 'sections/deep/b.tex'])
+  expect(caches()).toHaveLength(4); expect(new Set(caches())).toEqual(new Set([shared]))
+  for (const spy of reads) spy.mockClear()
+  expect(await validateTree(root, oid)).toHaveLength(3)
+  expect(new Set(caches()).size).toBe(1); expect(caches()[0]).toEqual(expect.any(Object)); expect(caches()[0]).not.toBe(shared)
+})
+
+it('reads each current working file once per pass and still charges the budget for every listed version', async () => {
+  const root = await folder()
+  await commit(root, { 'main.tex': 'one', 'refs.bib': 'refs' })
+  await commit(root, { 'main.tex': 'two' }, bob)
+  const latest = await commit(root, { 'main.tex': 'three' }, { ...bob, timestamp: bob.timestamp + 100 })
+  const current = vi.spyOn(SafeProject.prototype, 'readBytes')
+  const versions = new GitVersions(root)
+  expect((await versions.list()).map(entry => entry.path)).toEqual(['main.tex', 'main.tex', 'main.tex', 'refs.bib'])
+  expect(current.mock.calls.map(([path]) => path).sort()).toEqual(['main.tex', 'refs.bib'])
+  current.mockClear()
+  await versions.detail(id(latest, 'main.tex')); await versions.list()
+  expect(current.mock.calls.map(([path]) => path).sort()).toEqual(['main.tex', 'main.tex', 'refs.bib'])
+  // A failed read is never remembered: an unreadable (oversized) current file is re-checked for each of its versions.
+  await writeFile(join(root, 'main.tex'), Buffer.alloc(LIMITS.text + 1, 'a'))
+  current.mockClear()
+  expect((await versions.list()).map(entry => entry.path)).toEqual(['refs.bib'])
+  expect(current.mock.calls.map(([path]) => path).sort()).toEqual(['main.tex', 'main.tex', 'main.tex', 'refs.bib'])
 })

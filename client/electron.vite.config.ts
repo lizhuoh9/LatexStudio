@@ -4,7 +4,8 @@ import { resolvePublicGitHubApp } from './github-app.public'
 
 const githubApp = resolvePublicGitHubApp()
 export default defineConfig({
-  main: { build: { externalizeDeps: true }, define: {
+  // The main bundle is CommonJS: a lazily loaded dependency stays a plain require(), as it was when imported statically.
+  main: { build: { externalizeDeps: true, rollupOptions: { output: { dynamicImportInCjs: false } } }, define: {
     __PAPERSTUDIO_GITHUB_CLIENT_ID__: JSON.stringify(githubApp.clientId),
     __PAPERSTUDIO_GITHUB_APP_SLUG__: JSON.stringify(githubApp.appSlug)
   } },

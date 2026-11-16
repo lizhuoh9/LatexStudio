@@ -1,3 +1,5 @@
+import type { SyncTexData } from './synctex'
+
 export type TexEngine = 'pdflatex' | 'xelatex' | 'lualatex'
 
 export interface ProjectFile {
@@ -36,6 +38,7 @@ export interface CompileResult {
   canceled: boolean
   log: string
   pdf: Uint8Array | null
+  synctex?: SyncTexData | null
   durationMs: number
 }
 

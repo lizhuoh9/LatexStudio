@@ -145,4 +145,10 @@ describe('user-selected Overleaf home/editor layout retains real application con
     expect(contrast('#ffffff', '#3b58eb')).toBeGreaterThanOrEqual(4.5)
     expect(contrast('#ffffff', '#0b8475')).toBeGreaterThanOrEqual(4.5)
   })
+  it('renders all five editor toolbar icons at a uniform SVG box size', () => {
+    for (const id of ['edit-undo', 'edit-redo', 'edit-bold', 'edit-italic', 'edit-search']) {
+      expect(html).toMatch(new RegExp(`id="${id}"[^>]*><svg viewBox="0 0 16 16"`))
+    }
+    expect(layout).toContain('.editor-toolbar button svg { width: 15px; height: 15px; display: block; flex: none; }')
+  })
 })

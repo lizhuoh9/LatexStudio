@@ -1,4 +1,4 @@
-import { constants } from 'node:fs'
+import { constants, type Stats } from 'node:fs'
 import { lstat, open, opendir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -76,9 +76,13 @@ export class SafeProject {
       throw failure('项目目录已被替换或重定向，请重新打开项目')
   }
   async resolve(path: string, missingLeaf = false): Promise<string> {
+    return (await this.locate(path, missingLeaf)).target
+  }
+  /** `info` is the leaf lstat that passed the no-link and containment checks; null only for an allowed missing leaf. */
+  private async locate(path: string, missingLeaf = false): Promise<{ target: string; info: Stats | null }> {
     projectPath(path)
     await this.verifyRoot()
-    let target = this.root
+    let target = this.root, leaf: Stats | null = null
     const parts = path.split('/')
     for (const [index, part] of parts.entries()) {
       target = join(target, part)
@@ -89,12 +93,13 @@ export class SafeProject {
         const canonical = await realpath(target)
         if (!inside(this.canonical, canonical)) throw failure('路径逃逸出项目目录')
         projectPath(relative(this.canonical, canonical).split(sep).join('/'))
+        leaf = info
       } catch (error) {
-        if (missingLeaf && index === parts.length - 1 && code(error) === 'ENOENT') return target
+        if (missingLeaf && index === parts.length - 1 && code(error) === 'ENOENT') return { target, info: null }
         throw error
       }
     }
-    return target
+    return { target, info: leaf }
   }
   async readBytes(path: string, limit = LIMITS.file): Promise<Buffer> {
     const target = await this.resolve(path)
@@ -112,15 +117,18 @@ export class SafeProject {
       return bytes.subarray(0, bytesRead)
     } finally { await handle.close() }
   }
-  /** GUI may request directories, while compilation/history keep the default file-only snapshot. */
-  async list(includeDirectories = false): Promise<ProjectFile[]> {
+  /** GUI may request directories, while compilation/history keep the default file-only snapshot.
+   * `observe` receives, for every listed entry, the verified lstat sample that classified it.
+   */
+  async list(includeDirectories = false, observe?: (file: ProjectFile, info: Stats) => void): Promise<ProjectFile[]> {
     await this.verifyRoot()
     const files: ProjectFile[] = []
     const budget = { entries: 0 }
-    await this.walk('', files, budget, includeDirectories === true)
+    const add = (file: ProjectFile, info: Stats): void => { files.push(file); observe?.(file, info) }
+    await this.walk('', add, budget, includeDirectories === true)
     return files.sort((a, b) => a.path.localeCompare(b.path, 'en'))
   }
-  private async walk(folder: string, files: ProjectFile[], budget: { entries: number }, includeDirectories: boolean): Promise<void> {
+  private async walk(folder: string, add: (file: ProjectFile, info: Stats) => void, budget: { entries: number }, includeDirectories: boolean): Promise<void> {
     if (folder.split('/').length > LIMITS.depth) throw failure('项目目录深度超过限制')
     const target = folder ? await this.resolve(folder) : this.root
     const directory = await opendir(target)
@@ -129,11 +137,12 @@ export class SafeProject {
       const path = folder ? `${folder}/${entry.name}` : entry.name
       if (skipped(path) || entry.isSymbolicLink()) continue
       projectPath(path)
-      const info = await lstat(await this.resolve(path))
+      // The leaf lstat that just passed locate()'s checks classifies the entry; a second lstat adds no check.
+      const info = (await this.locate(path)).info!
       if (info.isDirectory()) {
-        if (includeDirectories) files.push({ path, kind: 'directory', size: 0 })
-        await this.walk(path, files, budget, includeDirectories)
-      } else if (info.isFile()) files.push({ path, size: info.size, kind: TEXT.test(path) ? 'text' : 'binary' })
+        if (includeDirectories) add({ path, kind: 'directory', size: 0 }, info)
+        await this.walk(path, add, budget, includeDirectories)
+      } else if (info.isFile()) add({ path, size: info.size, kind: TEXT.test(path) ? 'text' : 'binary' }, info)
       else throw failure('项目包含不支持的特殊文件')
     }
   }

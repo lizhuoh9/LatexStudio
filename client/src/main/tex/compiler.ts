@@ -1,7 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CompileRequest, CompileResult, TexEnvironment } from '../../shared/workspace-contracts'
-import { checkCanceled, copyProject, createBuild, loadPdf, monitorBuild, removeBuild } from '../local/build'
+import type { SyncTexData } from '../../shared/synctex'
+import { checkCanceled, copyProject, createBuild, loadPdf, loadSynctex, monitorBuild, removeBuild } from '../local/build'
 import { decodeText, failure, LIMITS, projectPath, SafeProject } from '../local/paths'
 import { BoundedLog } from '../local/process'
 import { createWindowsSandboxSession, type WindowsSandboxSession, type WindowsSandboxSessionOptions } from '../sandbox/windows'
@@ -75,10 +76,10 @@ export class LocalCompiler {
     const attempt: Attempt = { controller: new AbortController(), log: new BoundedLog(this.onLog) }
     this.active = attempt.controller
     const timer = setTimeout(() => attempt.controller.abort('timeout'), this.timeoutMs)
-    let pdf: Uint8Array | null = null
+    let compiled: { pdf: Uint8Array; synctex: SyncTexData | null } | null = null
     attempt.log.push(Buffer.from(LIMITATION))
     try {
-      pdf = await this.compile(request, attempt)
+      compiled = await this.compile(request, attempt)
     } catch (error) {
       // After an abort the result suffix explains why; the thrown value is often just the abort reason.
       if (!attempt.controller.signal.aborted) attempt.log.push(Buffer.from(`\n${error instanceof Error ? error.message : '编译失败'}\n`))
@@ -87,12 +88,12 @@ export class LocalCompiler {
       await this.release(attempt)
       this.active = undefined
     }
-    return this.result(attempt, pdf, started)
+    return this.result(attempt, compiled, started)
   }
   cancel(): void { this.active?.abort('canceled') }
   dispose(): void { this.disposed = true; this.cancel() }
 
-  private async compile(request: CompileRequest, attempt: Attempt): Promise<Uint8Array> {
+  private async compile(request: CompileRequest, attempt: Attempt): Promise<{ pdf: Uint8Array; synctex: SyncTexData | null }> {
     const { signal } = attempt.controller
     const project = await this.prepare(request)
     if (this.platform !== 'win32') throw failure('此平台的隔离编译尚未验收，未启用。')
@@ -113,7 +114,8 @@ export class LocalCompiler {
       attempt.session = await this.openSession(run, attempt)
       await this.passes(attempt.session, run, attempt)
       checkCanceled(signal)
-      return await loadPdf(join(source, '.paperstudio-output'))
+      const output = join(source, '.paperstudio-output')
+      return { pdf: await loadPdf(output), synctex: await loadSynctex(output, source) }
     } finally { await stopMonitor() }
   }
 
@@ -153,7 +155,7 @@ export class LocalCompiler {
     // see RUNTIME_FORMATS in runtime-cache.ts), and project snapshots never contain .fmt files. An absolute path argument would break
     // XeTeX when the runtime lives under a non-ASCII (e.g. Chinese user name) path.
     const args = ['-no-shell-escape', '-no-parse-first-line', `-progname=${engine}`, `-fmt=${engine}`,
-      '-interaction=nonstopmode', '-halt-on-error', '-file-line-error', '-jobname=paperstudio',
+      '-synctex=1', '-interaction=nonstopmode', '-halt-on-error', '-file-line-error', '-jobname=paperstudio',
       '-output-directory=./.paperstudio-output', ...(engine === 'xelatex' ? ['-no-pdf'] : []), `./${run.main}`]
     const record = (bytes: Buffer): void => attempt.log.push(bytes)
     let total = 2
@@ -213,12 +215,14 @@ export class LocalCompiler {
     }
   }
 
-  private result(attempt: Attempt, pdf: Uint8Array | null, started: number): CompileResult {
+  private result(attempt: Attempt, compiled: { pdf: Uint8Array; synctex: SyncTexData | null } | null, started: number): CompileResult {
     const { signal } = attempt.controller
     const reason: unknown = signal.reason
     const suffix = signal.aborted ? `\n${reason === 'timeout' ? `编译超过 ${Math.round(this.timeoutMs / 1000)} 秒限制` :
       reason === 'canceled' ? '编译已取消' : String(reason)}\n` : ''
-    return { ok: pdf !== null && !signal.aborted, canceled: reason === 'canceled', pdf: signal.aborted ? null : pdf,
+    return { ok: compiled !== null && !signal.aborted, canceled: reason === 'canceled',
+      pdf: signal.aborted ? null : compiled?.pdf ?? null,
+      synctex: signal.aborted ? null : compiled?.synctex ?? null,
       log: attempt.log.finish() + suffix, durationMs: Date.now() - started }
   }
 

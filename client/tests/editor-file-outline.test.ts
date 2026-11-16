@@ -37,6 +37,14 @@ describe('bounded current-source LaTeX outline parser', () => {
     expect(entries.map(entry => entry.title)).toEqual(['A% remains', 'B title', 'C'])
     expect(entries.map(entry => entry.line)).toEqual([1, 3, 6])
   })
+  it('keeps real line numbers across long plain runs, CRLF, comments and ignored blocks', () => {
+    const plain = 'prose without commands\n'.repeat(3000)
+    const block = String.raw`\begin{verbatim}` + '\n\\section{Hidden}\n'.repeat(40) + String.raw`\end{verbatim}` + '\n'
+    const entries = parseFileOutline(plain + String.raw`\section{A}` + '\r\n% c\r\n' + block + 'tail % ' + String.raw`\section{No}` + '\n' +
+      String.raw`\subsection{B}` + ' and ' + String.raw`\section{C}` + '\n'.repeat(500) + 'no break after the last heading ' + String.raw`\part{D}`)
+    expect(entries.map(entry => [entry.title, entry.line])).toEqual([['A', 3001], ['B', 3085], ['C', 3085], ['D', 3585]])
+    expect(parseFileOutline('one line % ' + String.raw`\section{No}`)).toEqual([])
+  })
   it('reads nested/escaped braces and multiline titles while preserving following source positions', () => {
     const entries = parseFileOutline(String.raw`\section{
  A {nested} \{literal\}
@@ -190,5 +198,12 @@ describe('SourceEditor line reveal is selection-only', () => {
     expect(last.view.dispatch.mock.calls[0]![0].selection).toEqual({ anchor: last.view.state.doc.line(last.view.state.doc.lines).from })
     const empty = editor(''); empty.instance.revealLine(1)
     expect(empty.view.dispatch.mock.calls[0]![0].selection).toEqual({ anchor: 0 })
+  })
+  it('selects and highlights the matching word in the target or adjacent line during inverse sync', () => {
+    const { view, instance } = editor('First line.\nSoft actuators and soft robots.\nThird line.')
+    instance.revealLine(2, 'actuators')
+    const spec = view.dispatch.mock.calls[0]![0]
+    const from = view.state.doc.toString().indexOf('actuators')
+    expect(spec.selection).toEqual({ anchor: from, head: from + 'actuators'.length })
   })
 })

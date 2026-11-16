@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../src/main/local/tools', () => { throw new Error('Production must not load PATH discovery') })
 vi.mock('../src/main/local/compiler', () => { throw new Error('Production must not load the research compiler') })
@@ -76,10 +77,30 @@ describe('managed pdflatex compile', () => {
     expect(options.workDirs).toHaveLength(2)
     expect(session.run).toHaveBeenCalledTimes(2)
     const args = session.run.mock.calls[0]![0] as string[]
-    expect(args).toContain('-no-shell-escape'); expect(args).toContain('./main.tex')
+    expect(args).toContain('-no-shell-escape'); expect(args).toContain('-synctex=1'); expect(args).toContain('./main.tex')
     expect(args).toContain('-fmt=pdflatex')
     expect(session.dispose).toHaveBeenCalledTimes(1); expect(session.cancel).not.toHaveBeenCalled()
     expect(await readdir(t.builds)).toEqual([])
+  })
+
+  it('parses bounded paperstudio.synctex.gz into project-relative SyncTeX coordinates without leaking build paths', async () => {
+    const t = await compiler(async (_args, cwd) => {
+      const out = join(cwd, '.paperstudio-output')
+      await writeFile(join(out, 'paperstudio.pdf'), PDF)
+      const synctex = [
+        'SyncTeX Version:1',
+        `Input:1:${cwd.replace(/\\/g, '/')}/./main.tex`,
+        'Input:2:C:\\texmf-dist\\tex\\latex\\base\\article.cls',
+        'Unit:1', 'Magnification:1000', 'X Offset:0', 'Y Offset:0', 'Content:',
+        '{1', '(1,5:4736286,9472572:6578176,786432,196608', 'x1,5:5000000,9472572', ')', '}', 'Postamble:'
+      ].join('\n')
+      await writeFile(join(out, 'paperstudio.synctex.gz'), gzipSync(Buffer.from(synctex, 'utf8')))
+      return { code: 0 }
+    })
+    const result = await t.compiler.run({ mainFile: 'main.tex', engine: 'pdflatex' })
+    expect(result.ok).toBe(true)
+    expect(result.synctex?.files).toEqual(['main.tex'])
+    expect(result.synctex?.nodes.some(node => node.line === 5 && node.page === 1)).toBe(true)
   })
 
   it('runs XeLaTeX as two -no-pdf passes then the bound xdvipdfmx tool, with the converter in the session policy', async () => {

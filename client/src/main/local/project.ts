@@ -32,8 +32,8 @@ export class ProjectService {
   async initialize(): Promise<ProjectInfo> {
     this.assertActive()
     await this.project.initialize()
-    const files = await this.list()
-    this.fingerprints = await this.scan(files)
+    const { files, fingerprints } = await this.snapshot()
+    this.fingerprints = fingerprints
     const tex = files.filter((file) => file.kind === 'text' && /\.tex$/i.test(file.path))
     const main = tex.find((file) => /(^|\/)(main|document|paper)\.tex$/i.test(file.path)) ?? tex[0]
     return { id: createHash('sha256').update(this.project.root).digest('hex'),
@@ -143,17 +143,17 @@ export class ProjectService {
     }
     if (failed) throw primary
   }
-  private async scan(files?: ProjectFile[]): Promise<Map<string, string>> {
-    const entries = files ?? await this.list(), result = new Map<string, string>()
-    for (let offset = 0; offset < entries.length; offset += 16) {
-      const batch = await Promise.all(entries.slice(offset, offset + 16).map(async (file) => {
-        const info = await lstat(await this.project.resolve(file.path))
-        return [file.path, `${file.kind}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`] as const
-      }))
-      for (const [path, fingerprint] of batch) result.set(path, fingerprint)
-    }
-    return result
+  /** One verified walk yields the listing AND each entry's change fingerprint; no second resolve/lstat pass. */
+  private async snapshot(): Promise<{ files: ProjectFile[]; fingerprints: Map<string, string> }> {
+    this.assertActive()
+    const seen = new Map<string, string>()
+    const files = await this.project.list(true, (file, info) => {
+      seen.set(file.path, `${file.kind}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`)
+    })
+    // Keyed in listing order, so change notifications keep their previous path order.
+    return { files, fingerprints: new Map(files.map(file => [file.path, seen.get(file.path)!])) }
   }
+  private async scan(): Promise<Map<string, string>> { return (await this.snapshot()).fingerprints }
   private async poll(): Promise<void> {
     if (this.polling || this.disposed) return
     this.polling = true

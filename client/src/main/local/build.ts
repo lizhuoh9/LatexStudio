@@ -1,6 +1,8 @@
 import { constants } from 'node:fs'
 import { lstat, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
+import { gunzipSync } from 'node:zlib'
+import { parseSyncTex, type SyncTexData } from '../../shared/synctex'
 import { code, decodeText, failure, inside, LIMITS, SafeProject } from './paths'
 
 export function checkCanceled(signal: AbortSignal): void {
@@ -97,4 +99,30 @@ export async function loadPdf(output: string): Promise<Uint8Array> {
       throw failure('TeX 未生成完整有效的 PDF')
     return Uint8Array.from(bytes.subarray(0, bytesRead))
   } finally { await handle.close() }
+}
+
+/** Reads optional SyncTeX output safely with bounded size and gzip output cap; never blocks a valid PDF compile. */
+export async function loadSynctex(output: string, sourceRoot: string): Promise<SyncTexData | null> {
+  for (const [name, compressed] of [['paperstudio.synctex.gz', true], ['paperstudio.synctex', false]] as const) {
+    const path = join(output, name)
+    let info
+    try { info = await lstat(path) } catch (error) {
+      if (code(error) === 'ENOENT') continue
+      return null
+    }
+    if (info.isSymbolicLink() || !info.isFile() || info.size < 1 || info.size > LIMITS.pdf) return null
+    try {
+      if (!inside(output, await realpath(path))) return null
+      const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+      try {
+        const bytes = Buffer.alloc(info.size + 1)
+        const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0)
+        if (bytesRead !== info.size) return null
+        const raw = bytes.subarray(0, bytesRead)
+        const text = (compressed ? gunzipSync(raw, { maxOutputLength: LIMITS.pdf }) : raw).toString('utf8')
+        return parseSyncTex(text, sourceRoot)
+      } finally { await handle.close() }
+    } catch { return null }
+  }
+  return null
 }

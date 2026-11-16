@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/p
 import { join } from 'node:path'
 import { code, digest, LIMITS, SafeProject } from './paths'
 import { HISTORY_HASH, HISTORY_ID, HISTORY_RECORD_LIMIT, historyFailure } from './history-validation'
+import { mapVerification } from '../tex/verification'
 
 type Bucket = 'objects' | 'entries' | 'pending'
 export interface HistoryBudget { maxBytes: number; maxEntries: number }
@@ -15,13 +16,15 @@ export class HistoryStore {
   }
   async initialize(create: boolean): Promise<boolean> {
     await this.project.verifyRoot()
+    let root: string | undefined // Resolved once per call, on first use, for all five directory comparisons.
     for (const path of [join(this.project.root, '.paperstudio'), this.base, ...['objects', 'entries', 'pending'].map(x => join(this.base, x))]) {
       if (create) await mkdir(path).catch(error => { if (code(error) !== 'EEXIST') throw error })
       try {
         const info = await lstat(path)
         if (!info.isDirectory() || info.isSymbolicLink()) throw historyFailure('历史目录不是安全的真实目录')
         const canonical = await realpath(path)
-        if (canonical !== join(await realpath(this.project.root), ...path.slice(this.project.root.length + 1).split(/[\\/]/)))
+        root ??= await realpath(this.project.root)
+        if (canonical !== join(root, ...path.slice(this.project.root.length + 1).split(/[\\/]/)))
           throw historyFailure('历史目录被重定向')
       } catch (error) {
         if (!create && code(error) === 'ENOENT') {
@@ -96,11 +99,12 @@ export class HistoryStore {
       const names = await this.names(bucket)
       if (bucket === 'objects') objects = names.length
       else records += names.length
-      for (const name of names) {
+      // Every file is still checked; bounded batches only overlap the metadata calls and keep the first failure in order.
+      for (const size of await mapVerification(names, async name => {
         const info = await lstat(this.target(bucket, name))
         if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw historyFailure('历史包含链接或特殊文件')
-        total += info.size
-      }
+        return info.size
+      })) total += size
     }
     if (total + extraBytes > this.budget.maxBytes || records + extraRecords > this.budget.maxEntries || objects + extraObjects > this.budget.maxEntries * 2)
       throw historyFailure('历史空间或版本数量已满，请备份项目历史后再处理；不会自动删除旧版本')

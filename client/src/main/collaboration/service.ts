@@ -294,18 +294,6 @@ export class GitHubAccountService {
       }, captured, true)
     } catch (error) { return Promise.reject(error) }
   }
-  withSelectedWritableProjectAccess<T>(handle: string, action: (access: WritableProjectAccess) => Promise<T>,
-    options: RepositoryOperationOptions = {}): Promise<T> {
-    try {
-      this.expireIfNeeded()
-      const selected = this.selections.consume(handle, { owner: this.session?.identity ?? null, generation: this.generation }, performance.now())
-      const captured = snapshotRepositoryOperationOptions(options)
-      if (typeof action !== 'function') throw new CollaborationError('response')
-      return this.startAccess(selected.id, selected, async access => {
-        assertWritableProjectAccess(access); return action(access)
-      }, captured, true)
-    } catch (error) { return Promise.reject(error) }
-  }
   createPrivateProject(name: string, options: RepositoryOperationOptions = {}): Promise<CreatedPrivateProject> {
     try { const valid = repositoryName(name); return this.startAction((context, scope) => createPrivateProject(context, scope, valid), options) }
     catch (error) { return Promise.reject(error) }

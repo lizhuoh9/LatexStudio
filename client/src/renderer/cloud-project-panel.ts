@@ -9,6 +9,8 @@ import { translate } from '../shared/i18n'
 import { localizeStaticHtml, uiText, uiAttribute, uiErrorValue, uiFormattedText, uiFormattedAttribute } from './i18n-dom'
 
 type Ticket = { project: ProjectInfo | null; version: number; path: string; epoch: number }
+type RowList = 'projects' | 'invitations'
+const ROW_LISTS: readonly RowList[] = ['projects', 'invitations']
 const TEMPLATE = `
   <header><h3>当前论文同步</h3><button id="cp-refresh" type="button">刷新</button></header>
   <p id="cp-status" role="status" aria-live="polite"></p>
@@ -58,6 +60,8 @@ export class CloudProjectPanel {
   private createdUnlinked = new Set<ProjectInfo | null>()
   private timer: ReturnType<typeof setInterval> | null = null
   private cleanups: (() => void)[] = []
+  // Listeners of the replaceable result rows are released when their list is replaced, not kept until dispose.
+  private rowCleanups: Record<RowList, (() => void)[]> = { projects: [], invitations: [] }
 
   constructor(private api: CloudApi | undefined, private documents: Documents, private dialogs: Dialogs,
     private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void,
@@ -96,7 +100,7 @@ export class CloudProjectPanel {
     if (this.disposed) return
     this.epoch += 1; this.statusRequest += 1
     this.state = null; this.stateProject = null; this.autoSession = false; this.refreshing = false
-    element('cp-project-list').replaceChildren(); element('cp-invitation-list').replaceChildren()
+    this.clearRows()
     for (const id of ['share-link', 'summary', 'login']) element<HTMLInputElement>(`cp-${id}`).value = ''
     text('cp-status', ''); text('cp-message', ''); text('project-sync-status', '')
     this.clearError()
@@ -113,6 +117,7 @@ export class CloudProjectPanel {
     this.disposed = true; this.epoch += 1
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
+    for (const list of ROW_LISTS) this.releaseRows(list)
     for (const cleanup of this.cleanups.splice(0)) cleanup()
     this.controls()
   }
@@ -151,9 +156,14 @@ export class CloudProjectPanel {
       && (!this.state.signedIn || !this.state.connection)
   }
 
-  private listen(node: HTMLElement, action: () => void): void {
+  private listen(node: HTMLElement, action: () => void, cleanups = this.cleanups): void {
     node.addEventListener('click', action)
-    this.cleanups.push(() => node.removeEventListener('click', action))
+    cleanups.push(() => node.removeEventListener('click', action))
+  }
+  private releaseRows(list: RowList): void { for (const cleanup of this.rowCleanups[list].splice(0)) cleanup() }
+  private clearRows(): void {
+    for (const list of ROW_LISTS) this.releaseRows(list)
+    element('cp-project-list').replaceChildren(); element('cp-invitation-list').replaceChildren()
   }
 
   private dispatch(label: string, action: () => Promise<void>, mutation = false): void {
@@ -226,7 +236,7 @@ export class CloudProjectPanel {
       const accountChanged = this.state?.account?.id !== state.account?.id || this.state?.signedIn !== state.signedIn
       if (accountChanged) this.epoch += 1
       if (accountChanged || this.stateProject !== ticket.project || !state.signedIn) {
-        element('cp-project-list').replaceChildren(); element('cp-invitation-list').replaceChildren()
+        this.clearRows()
         element<HTMLInputElement>('cp-share-link').value = ''
       }
       this.state = state; this.stateProject = ticket.project
@@ -299,10 +309,10 @@ export class CloudProjectPanel {
     }
   }
 
-  private choice(label: string, action: () => Promise<void>, ticket: Ticket): HTMLButtonElement {
+  private choice(label: string, action: () => Promise<void>, ticket: Ticket, list: RowList): HTMLButtonElement {
     const node = document.createElement('button')
     node.type = 'button'; uiText(node, label); node.dataset.cpChoice = 'true'
-    this.listen(node, () => { if (!node.disabled && this.valid(ticket, false)) this.dispatch(label, action, true) })
+    this.listen(node, () => { if (!node.disabled && this.valid(ticket, false)) this.dispatch(label, action, true) }, this.rowCleanups[list])
     return node
   }
 
@@ -310,20 +320,21 @@ export class CloudProjectPanel {
     const ticket = this.ticket(), projects = await this.api!.projects()
     if (!this.valid(ticket)) return
     const list = element('cp-project-list')
+    this.releaseRows('projects')
     list.replaceChildren(...projects.map(choice => this.projectRow(choice, ticket)))
     if (!projects.length) list.append(listItem('暂无可访问项目，请检查应用授权。'))
   }
 
   private projectRow(choice: CloudProjectChoice, ticket: Ticket): HTMLLIElement {
     const row = listItem(`${choice.project.owner}/${choice.project.name}`, choice.project.private ? '私有项目' : '已有项目')
-    row.append(this.choice('下载到本地', () => this.receive(() => this.api!.downloadProject(choice.handle)), ticket))
+    row.append(this.choice('下载到本地', () => this.receive(() => this.api!.downloadProject(choice.handle)), ticket, 'projects'))
     if (ticket.project) row.append(this.choice('关联当前论文', async () => {
       const current = this.ticket()
       if (!await this.dialogs.confirm('关联当前论文？', '将当前本地论文关联到所选项目。之后需明确同步才会交换文件。')) return
       if (!this.valid(current)) return
       await this.api!.linkProject(choice.handle)
       if (this.valid(current)) { this.createdUnlinked.delete(current.project); await this.refresh() }
-    }, ticket))
+    }, ticket, 'projects'))
     return row
   }
 
@@ -355,6 +366,7 @@ export class CloudProjectPanel {
   private async invitations(): Promise<void> {
     const ticket = this.ticket(), invitations = await this.api!.invitations()
     if (!this.valid(ticket)) return
+    this.releaseRows('invitations')
     element('cp-invitation-list').replaceChildren(...invitations.map(invitation => {
       const row = listItem(`${invitation.owner}/${invitation.name}`, `邀请人：${invitation.inviter}`)
       row.append(this.choice('接受邀请', async () => {
@@ -363,7 +375,7 @@ export class CloudProjectPanel {
         if (!this.valid(current)) return
         const result = await this.api!.acceptInvitation(invitation.handle)
         if (this.valid(current)) { this.message(result.message); await this.invitations() }
-      }, ticket))
+      }, ticket, 'invitations'))
       return row
     }))
   }

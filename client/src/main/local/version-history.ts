@@ -5,6 +5,7 @@ import type { RevisionDetail, RevisionEntry } from '../../shared/workspace-contr
 import { code, decodeText, digest, LIMITS, projectPath } from './paths'
 import { HistoryStore } from './history-store'
 import { cleanHistoryLabel, HISTORY_ID, historyFailure, parseHistoryRecord, serializeHistoryEntry, UNKNOWN_AUTHOR } from './history-validation'
+import { mapVerification } from '../tex/verification'
 
 export interface VersionChange {
   path: string
@@ -104,22 +105,20 @@ export class VersionHistory {
       return null
     }
   }
+  /** Every record and object is read and verified exactly as before; bounded batches only overlap the file I/O,
+   * and the first failure in listing order is still the one reported.
+   */
   private async entries(bucket: 'entries' | 'pending'): Promise<RevisionEntry[]> {
-    const entries: RevisionEntry[] = []
-    for (const name of await this.store.names(bucket)) {
+    return mapVerification(await this.store.names(bucket), async name => {
       const entry = parseHistoryRecord(await this.store.read(bucket, name))
       if (`${entry.id}.json` !== name) throw historyFailure('历史编号与文件不一致')
-      entries.push(entry)
-    }
-    return entries
+      return entry
+    })
   }
   private async verifyObjects(entries: RevisionEntry[]): Promise<void> {
-    const checked = new Set<string>()
-    for (const entry of entries) for (const hash of [entry.beforeRevision, entry.afterRevision]) {
-      if (!hash || checked.has(hash)) continue
-      decodeText(await this.store.read('objects', hash))
-      checked.add(hash)
-    }
+    const hashes = new Set<string>()
+    for (const entry of entries) for (const hash of [entry.beforeRevision, entry.afterRevision]) if (hash) hashes.add(hash)
+    await mapVerification([...hashes], async hash => { decodeText(await this.store.read('objects', hash)) })
   }
   private async reserveAndWrite(change: VersionChange, entries: RevisionEntry[]): Promise<void> {
     const objects = new Map<string, Buffer>()

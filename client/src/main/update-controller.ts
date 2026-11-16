@@ -1,5 +1,5 @@
 import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { autoUpdater, type AppUpdater } from 'electron-updater'
+import type { AppUpdater } from 'electron-updater'
 import { UPDATE_CHANNELS as C, type UpdateState } from '../shared/update-contracts'
 import { isTrustedSettingsSender } from './url-policy'
 
@@ -17,29 +17,45 @@ export class UpdateController {
   private timer: ReturnType<typeof setTimeout> | null = null
   private disposed = false
   private handlers: { event: UpdateEvent; listener: (value: unknown) => void }[] = []
+  private updater: AppUpdater | null = null
 
-  constructor(private window: BrowserWindow, private url: string, private updater: AppUpdater = autoUpdater,
+  /** Without an injected updater, electron-updater is loaded on the first real check only: the unpackaged
+   * desktop entry never checks, so it never pays for (or instantiates) the updater at startup.
+   */
+  constructor(private window: BrowserWindow, private url: string, updater?: AppUpdater,
     private packaged = app.isPackaged, currentVersion = app.getVersion()) {
     this.state = { phase: packaged ? 'idle' : 'development', currentVersion, latestVersion: null,
       manualInstallOnly: true, message: packaged ? '自动检查正式发布的新版本。' : '本地开发版不会自动联网检查更新。' }
+    if (updater) this.configure(updater)
+    window.once('closed', () => this.dispose())
+  }
+
+  /** Runs before any check can reach the updater: manual-install-only flags, fixed public feed, guarded events. */
+  private configure(updater: AppUpdater): AppUpdater {
     updater.autoDownload = false; updater.autoInstallOnAppQuit = false
     updater.allowPrerelease = false; updater.allowDowngrade = false; updater.disableWebInstaller = true
     updater.forceDevUpdateConfig = false; updater.logger = null
     updater.setFeedURL({ provider: 'github', owner: 'lizhuoh9', repo: 'LatexStudio', private: false })
-    this.listen('update-available', info => {
+    this.updater = updater
+    this.listen(updater, 'update-available', info => {
       const offered = info && typeof info === 'object' && 'version' in info ? info.version : null
       if (version(offered)) this.publish({ phase: 'available', latestVersion: offered,
         message: '发现新版本。当前为未签名开发版，请保存论文后手动下载安装。' })
       else this.publish({ phase: 'error', message: '版本信息无效，请到官方发布页查看。' })
     })
-    this.listen('update-not-available', () => this.publish({ phase: 'current', latestVersion: null, message: '当前已是最新正式发布版本。' }))
-    this.listen('error', () => this.publish({ phase: 'error', message: '暂时无法检查更新，或尚无正式发布版本。可稍后重试。' }))
-    window.once('closed', () => this.dispose())
+    this.listen(updater, 'update-not-available', () => this.publish({ phase: 'current', latestVersion: null, message: '当前已是最新正式发布版本。' }))
+    this.listen(updater, 'error', () => this.publish({ phase: 'error', message: '暂时无法检查更新，或尚无正式发布版本。可稍后重试。' }))
+    return updater
+  }
+  private async load(): Promise<AppUpdater> {
+    const module = await import('electron-updater')
+    if (this.disposed) throw new Error('Update controller disposed') // before the updater instance is even created
+    return this.updater ?? this.configure(module.autoUpdater)
   }
 
-  private listen(event: UpdateEvent, listener: (value: unknown) => void): void {
+  private listen(updater: AppUpdater, event: UpdateEvent, listener: (value: unknown) => void): void {
     const guarded = (value: unknown): void => { if (!this.disposed) listener(value) }
-    this.updater.on(event, guarded)
+    updater.on(event, guarded)
     this.handlers.push({ event, listener: guarded })
   }
   private publish(update: Partial<UpdateState>): void {
@@ -72,7 +88,9 @@ export class UpdateController {
     if (this.disposed || !this.packaged) return Promise.resolve(this.status())
     if (this.pending) return this.pending
     this.publish({ phase: 'checking', message: '正在检查 GitHub 正式发布版本…' })
-    this.pending = this.updater.checkForUpdates().then(() => this.status()).catch(() => {
+    // An already configured updater is still called synchronously; only the first packaged check awaits the module.
+    const started = this.updater ? this.updater.checkForUpdates() : this.load().then(updater => updater.checkForUpdates())
+    this.pending = started.then(() => this.status()).catch(() => {
       this.publish({ phase: 'error', message: '暂时无法检查更新，或尚无正式发布版本。可到官方发布页查看。' })
       return this.status()
     }).finally(() => { this.pending = null })
@@ -83,7 +101,7 @@ export class UpdateController {
     this.disposed = true
     if (this.timer !== null) clearTimeout(this.timer)
     const remove = (): void => {
-      for (const { event, listener } of this.handlers.splice(0)) this.updater.removeListener(event, listener)
+      for (const { event, listener } of this.handlers.splice(0)) this.updater?.removeListener(event, listener)
     }
     if (this.pending) void this.pending.then(remove, remove)
     else remove()

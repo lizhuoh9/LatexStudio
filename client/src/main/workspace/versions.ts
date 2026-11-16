@@ -13,9 +13,11 @@ export class WorkspaceVersions {
   }
 
   async list(): Promise<RevisionEntry[]> {
-    const journal = await this.journal.list()
-    const commits = await this.git.list()
-    return [...journal, ...commits].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+    // Two independent read-only sources: read them together, let both settle, and keep the journal's failure first.
+    const [journal, commits] = await Promise.allSettled([this.journal.list(), this.git.list()])
+    if (journal.status === 'rejected') throw journal.reason
+    if (commits.status === 'rejected') throw commits.reason
+    return [...journal.value, ...commits.value].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
   }
 
   detail(id: string): Promise<RevisionDetail> {

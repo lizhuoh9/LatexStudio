@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import git from 'isomorphic-git'
 import type { RevisionDetail, RevisionEntry } from '../../shared/workspace-contracts'
 import { decodeText, digest, LIMITS, projectPath, SafeProject } from '../local/paths'
-import { hasRepository, headOid } from './files'
+import { hasRepository, headOid, type GitReadCache } from './files'
 import { publicText } from './metadata'
 import { excluded, GitHubError, safePath } from './policy'
 
@@ -12,7 +12,11 @@ const TEXT = /\.(?:tex|ltx|bib|sty|cls|bst|txt|md|csv|tsv|json|yaml|yml|toml|cfg
 const OID = /^[a-f0-9]{40}$/
 type Commit = Awaited<ReturnType<typeof git.readCommit>>
 interface Budget { trees: number; bytes: number }
-interface Context { project: SafeProject; commits: Commit[]; trees: Map<string, Map<string, string>>; budget: Budget }
+interface Context {
+  project: SafeProject; commits: Commit[]; trees: Map<string, Map<string, string>>; budget: Budget; cache: GitReadCache
+  /** Byte size of each current working file already read and decoded in THIS pass; failures are never remembered. */
+  current: Map<string, number>
+}
 
 function allowed(root: string, path: string): boolean {
   try { projectPath(path); safePath(root, path); return !excluded(path) }
@@ -80,13 +84,13 @@ export class GitVersions {
     if (!await hasRepository(this.root)) return null
     const head = await headOid(this.root)
     if (!head) return null
-    const commits: Commit[] = [], queue = [head], seen = new Set<string>()
+    const commits: Commit[] = [], queue = [head], seen = new Set<string>(), cache: GitReadCache = {} // this list/detail call only
     while (queue.length && commits.length < MAX_COMMITS) {
       const oid = queue.shift()!
       if (seen.has(oid)) continue
       if (!OID.test(oid)) throw new GitHubError('Git 历史包含无效对象标识。')
       seen.add(oid)
-      const commit = await git.readCommit({ fs, dir: this.root, oid })
+      const commit = await git.readCommit({ fs, dir: this.root, oid, cache })
       commits.push(commit)
       for (const parent of commit.commit.parent) {
         if (queue.length + seen.size >= MAX_COMMITS) break
@@ -94,7 +98,7 @@ export class GitVersions {
       }
     }
     commits.sort((a, b) => b.commit.author.timestamp - a.commit.author.timestamp || a.oid.localeCompare(b.oid))
-    return { project, commits, trees: new Map(), budget: { trees: 0, bytes: 0 } }
+    return { project, commits, trees: new Map(), budget: { trees: 0, bytes: 0 }, cache, current: new Map() }
   }
 
   private async parentTree(commit: Commit, context: Context): Promise<Map<string, string>> {
@@ -102,7 +106,7 @@ export class GitVersions {
     if (!oid) return new Map()
     // Only the first parent is used for merge comparisons; the boundary parent is
     // reached through a validated commit, never through a caller-provided object ID.
-    const parent = context.commits.find(item => item.oid === oid) ?? await git.readCommit({ fs, dir: this.root, oid })
+    const parent = context.commits.find(item => item.oid === oid) ?? await git.readCommit({ fs, dir: this.root, oid, cache: context.cache })
     return this.tree(parent.commit.tree, context)
   }
 
@@ -117,7 +121,7 @@ export class GitVersions {
 
   private async walk(oid: string, prefix: string, depth: number, result: Map<string, string>, context: Context): Promise<void> {
     if (depth > LIMITS.depth) throw new GitHubError('Git 历史目录深度超过限制。')
-    const { tree } = await git.readTree({ fs, dir: this.root, oid })
+    const { tree } = await git.readTree({ fs, dir: this.root, oid, cache: context.cache })
     const names = new Set<string>()
     for (const item of tree) {
       if (++context.budget.trees > LIMITS.entries) throw new GitHubError('Git 历史遍历超过 10000 个目录项限制。')
@@ -132,7 +136,7 @@ export class GitVersions {
   }
 
   private async blob(oid: string, context: Context): Promise<Buffer | null> {
-    const { blob } = await git.readBlob({ fs, dir: this.root, oid })
+    const { blob } = await git.readBlob({ fs, dir: this.root, oid, cache: context.cache })
     // Checking byteLength before decoding bounds accepted text and aggregate work,
     // but the library has already materialized/unpacked this particular object.
     this.charge(blob.byteLength, context)
@@ -146,9 +150,14 @@ export class GitVersions {
   }
 
   private async readDetail(commit: Commit, path: string, afterTree: Map<string, string>, beforeTree: Map<string, string>, context: Context): Promise<RevisionDetail | null> {
-    let current: Buffer
-    try { current = await context.project.readBytes(path, LIMITS.text); decodeText(current) } catch { return null }
-    this.charge(current.byteLength, context)
+    // The current file only gates the entry and its budget charge; one verified read per path serves the whole pass.
+    let current = context.current.get(path)
+    if (current === undefined) {
+      try { const bytes = await context.project.readBytes(path, LIMITS.text); decodeText(bytes); current = bytes.byteLength }
+      catch { return null }
+      context.current.set(path, current)
+    }
+    this.charge(current, context)
     const after = await this.blob(afterTree.get(path)!, context)
     if (!after) return null
     const previous = beforeTree.get(path)

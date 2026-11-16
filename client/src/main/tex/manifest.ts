@@ -32,7 +32,8 @@ export async function hashFile(path: string, maximum = 512 * 1024 * 1024, signal
     const current = await file.stat()
     if (before.dev !== current.dev || before.ino !== current.ino || before.size !== current.size) throw new Error('TeX 资源在校验时发生变化')
     const hash = createHash('sha256')
-    const bytes = Buffer.alloc(128 * 1024)
+    // Most TeX resources are far smaller than one chunk: size the buffer to the file (+1 byte so growth is still read).
+    const bytes = Buffer.alloc(Math.min(128 * 1024, before.size + 1))
     let total = 0
     for (;;) {
       signal?.throwIfAborted()

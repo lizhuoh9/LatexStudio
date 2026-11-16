@@ -60,15 +60,22 @@ export async function headOid(root: string): Promise<string | null> {
   }
 }
 
-export async function validateTree(root: string, oid: string): Promise<string[]> {
-  const commit = await git.readCommit({ fs, dir: root, oid })
+/** isomorphic-git object cache for ONE read-only pass. Without it every object read re-reads and re-indexes each
+ * packfile (a cloned project is one big pack). Every object is still read and checked; never keep a cache across
+ * a fetch, commit, checkout or another operation.
+ */
+export type GitReadCache = object
+
+export async function validateTree(root: string, oid: string, cache: GitReadCache = {}): Promise<string[]> {
+  const commit = await git.readCommit({ fs, dir: root, oid, cache })
   const files: string[] = []
-  await inspectTree(root, commit.commit.tree, '', files, { remaining: 100_000 })
+  await inspectTree(root, commit.commit.tree, '', files, { remaining: 100_000 }, cache)
   return files
 }
 
-async function inspectTree(root: string, oid: string, prefix: string, files: string[], budget: { remaining: number }): Promise<void> {
-  const { tree } = await git.readTree({ fs, dir: root, oid })
+async function inspectTree(root: string, oid: string, prefix: string, files: string[], budget: { remaining: number },
+  cache: GitReadCache): Promise<void> {
+  const { tree } = await git.readTree({ fs, dir: root, oid, cache })
   const names = new Set<string>()
   for (const entry of tree) {
     if (--budget.remaining < 0) throw new GitHubError('远端项目文件过多，操作已停止。')
@@ -77,7 +84,7 @@ async function inspectTree(root: string, oid: string, prefix: string, files: str
     const normalized = entry.path.toLowerCase()
     if (names.has(normalized)) throw new GitHubError('远端文件名在当前平台不唯一，操作已停止。')
     names.add(normalized)
-    if (entry.mode === '040000' && entry.type === 'tree') await inspectTree(root, entry.oid, path, files, budget)
+    if (entry.mode === '040000' && entry.type === 'tree') await inspectTree(root, entry.oid, path, files, budget, cache)
     else if (['100644', '100755'].includes(entry.mode) && entry.type === 'blob') {
       if (excluded(path)) throw new GitHubError('远端包含凭据或构建文件，请先整理远端再同步。')
       files.push(path)

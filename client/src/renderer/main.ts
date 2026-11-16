@@ -22,9 +22,10 @@ import type { DesktopLinksApi } from '../shared/desktop-links-contracts'
 import agplLicense from '../vendor/ayakaleaf/LICENSE.txt?raw'
 import thirdPartyNotices from '../../THIRD_PARTY_NOTICES.md?raw'
 import type { ProjectFile, ProjectInfo, TexEngine, TexEnvironment, WorkspaceApi, WorkspaceEvent } from '../shared/workspace-contracts'
+import { forwardSync, inverseSync, type SyncTexData } from '../shared/synctex'
 import { Documents } from './documents'
-import { SourceEditor } from './editor-view'
-import { PdfPreview } from './pdf-view'
+import { SourceEditor, type EditorDoubleClickLocation } from './editor-view'
+import { PdfPreview, type PdfDoubleClickLocation } from './pdf-view'
 import { Dialogs } from './dialogs'
 import { appendLog, button, element, text } from './dom'
 import { renderFiles } from './file-tree'
@@ -65,6 +66,7 @@ class Workbench {
   private outline: FileOutline | null = null
   private lastOutlineContent: string | null = null
   private lastMainTexList = ''
+  private synctex: SyncTexData | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   private sharing: SharingPanel | null = null
   private cloud: CloudProjectPanel
@@ -81,11 +83,12 @@ class Workbench {
     this.editor = new SourceEditor(element('source-editor'), (content) => {
       if (!this.closing) this.documents.edited(content)
     },
-      () => this.run('保存文件', async () => { await this.documents.save() }))
+      () => this.run('保存文件', async () => { await this.documents.save() }),
+      location => { void this.jumpToPdf(location) })
     this.outline = new FileOutline(element('file-outline'), line => this.editor.revealLine(line))
     this.layout = new WorkbenchLayout(() => this.showHome())
     this.splitter = new WorkspaceSplitter()
-    this.pdf = new PdfPreview((message) => this.notify(message))
+    this.pdf = new PdfPreview((message) => this.notify(message), location => { void this.jumpToSource(location) })
     this.documents = new Documents(api, {
       show: (content, readOnly) => this.editor.show(content, readOnly),
       state: (buffer) => this.renderDocument(buffer), files: (files, active) => this.renderFiles(files, active),
@@ -323,6 +326,7 @@ class Workbench {
 
   private async adopt(project: ProjectInfo): Promise<void> {
     this.pendingExternal.clear()
+    this.synctex = null
     await adoptCommittedProject(project, () => this.pdf.clear(), next => this.documents.adopt(next), message => this.notify(message))
     this.showEditor()
     void this.library.refresh()
@@ -404,8 +408,30 @@ class Workbench {
         ? `本机编译完成 · ${(result.durationMs / 1000).toFixed(1)} 秒` : '本次编译未成功，请查看日志。预览仍保留上次成功的结果。')
       // Not awaited: PDF.js paints via requestAnimationFrame, which Chromium pauses while the window is hidden or
       // covered. The finished compile must not stay "in progress" until the user looks at the window again.
-      if (result.ok && result.pdf) void this.pdf.show(result.pdf).catch(() => undefined)
+      if (result.ok && result.pdf) {
+        this.synctex = result.synctex ?? null
+        void this.pdf.show(result.pdf).catch(() => undefined)
+      }
     } finally { this.compiling = false; this.updateControls() }
+  }
+
+  private jumpToPdf(location: EditorDoubleClickLocation): void {
+    if (this.closing || !this.synctex || !this.documents.buffer.path) return
+    const target = forwardSync(this.synctex, this.documents.buffer.path, location.line, location.columnFraction)
+    if (target) void this.pdf.jumpTo(target, location.word).catch(error => this.notify(readableError(error)))
+  }
+
+  private async jumpToSource(location: PdfDoubleClickLocation): Promise<void> {
+    if (this.closing || !this.synctex || !this.documents.project) return
+    const target = inverseSync(this.synctex, location.page, location.x, location.y)
+    if (!target) return
+    if (target.file !== this.documents.buffer.path) {
+      const exists = this.documents.project.files.some(file => file.path === target.file && file.kind === 'text')
+      if (!exists) return
+      if (this.busy) { this.notify('正在处理上一项操作，请稍候。'); return }
+      await this.execute('跳转源文件', () => this.documents.open(target.file), false)
+    }
+    if (this.documents.buffer.path === target.file) this.editor.revealLine(target.line, location.word)
   }
 
   private bindClosingInput(): void {

@@ -14,6 +14,7 @@ interface Command { name: string; end: number }
 interface Found { end: number; heading?: Pick<FileOutlineEntry, 'kind' | 'title' | 'level' | 'starred'> }
 const IGNORED_ENVIRONMENTS = new Set(['verbatim', 'verbatim*', 'Verbatim', 'Verbatim*', 'BVerbatim', 'LVerbatim',
   'lstlisting', 'minted', 'comment', 'filecontents', 'filecontents*', 'luacode', 'luacode*', 'pycode'])
+const SPECIAL = /[%\\]/g // The only characters the outline scan acts on; everything between them is plain text.
 const letter = (value: string | undefined): boolean => !!value && /[A-Za-z@]/.test(value)
 function whitespace(source: string, start: number): number {
   let cursor = start
@@ -120,14 +121,20 @@ function inspect(source: string, start: number): Found {
 /** A bounded literal-source outline, not a TeX expansion engine or proof of rendered document structure. */
 export function parseFileOutline(content: string): FileOutlineEntry[] {
   const source = content.slice(0, MAX_OUTLINE_CHARACTERS), entries: FileOutlineEntry[] = [], ancestors: number[] = []
-  let cursor = 0, line = 1
-  const advance = (end: number): void => { while (cursor < end) { if (source[cursor] === '\n') line++; cursor++ } }
+  // `newline` is always the first line break at or after `cursor` (-1: none), so each break is located only once.
+  let cursor = 0, line = 1, newline = source.indexOf('\n')
+  const advance = (end: number): void => {
+    while (newline >= 0 && newline < end) { line++; newline = source.indexOf('\n', newline + 1) }
+    if (end > cursor) cursor = end
+  }
   while (cursor < source.length && entries.length < MAX_OUTLINE_ITEMS) {
-    if (source[cursor] === '%') {
-      const newline = source.indexOf('\n', cursor)
-      advance(newline < 0 ? source.length : newline); continue
+    if (source[cursor] === '%') { advance(newline < 0 ? source.length : newline); continue }
+    if (source[cursor] !== '\\') {
+      // Skip a whole run of plain text at once instead of one closure call per character.
+      SPECIAL.lastIndex = cursor
+      const next = SPECIAL.exec(source)
+      advance(next ? next.index : source.length); continue
     }
-    if (source[cursor] !== '\\') { advance(cursor + 1); continue }
     const found = inspect(source, cursor), headingLine = line
     advance(Math.max(cursor + 1, found.end))
     if (!found.heading) continue

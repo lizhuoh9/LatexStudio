@@ -114,9 +114,8 @@ body[data-ui-theme="overleaf"] #file-save { background: #eef2ff; border: 1px sol
 body[data-ui-theme="overleaf"] #file-save:hover:not(:disabled) { background: #dfe7ff; color: #1d32a3; }
 body[data-ui-theme="overleaf"] #file-save kbd { display: none; }
 .editor-toolbar { display: flex; align-items: center; gap: 3px; min-height: 32px; padding: 2px 8px; background: var(--frame-bg); color: var(--text-secondary); border-bottom: 1px solid var(--frame-border); }
-.editor-toolbar button { min-height: 26px; min-width: 26px; padding: 2px 7px; color: inherit; font-size: 14px; border-radius: 6px; }
-.editor-toolbar #edit-bold { font-weight: 800; }
-.editor-toolbar #edit-italic { font-style: italic; }
+.editor-toolbar button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-width: 28px; min-height: 28px; padding: 0; color: inherit; border-radius: 6px; }
+.editor-toolbar button svg { width: 15px; height: 15px; display: block; flex: none; }
 .tool-separator { height: 14px; width: 1px; margin-inline: 5px; background: var(--border-strong); }
 .source-mode { margin-left: auto; padding: 2px 10px; color: #2a44c4; background: #eef2ff; border: 1px solid #c7d4fe; border-radius: 999px; font-size: 10px; font-weight: 600; }
 body[data-ui-theme="overleaf"] .preview-panel { grid-area: preview; background: var(--pdf-desk); }
