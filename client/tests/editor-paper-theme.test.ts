@@ -40,6 +40,21 @@ describe('user-selected Overleaf home/editor layout retains real application con
     expect(editor.indexOf('id="file-outline"')).toBeGreaterThan(editor.indexOf('id="file-tree"'))
     expect(layout).toContain('grid-template-rows: minmax(180px,1.35fr) minmax(120px,1fr)')
   })
+  it('uses honest static sidebar headings without fake disclosure glyphs or button semantics', () => {
+    expect(html).toContain('<h2 id="paper-files-title">文件树</h2>')
+    expect(html).toContain('<h2 id="outline-title">文件大纲</h2>')
+    for (const id of ['paper-files-title', 'outline-title']) {
+      expect(tag(id)).not.toMatch(/aria-expanded|aria-controls|tabindex|role=/)
+      expect(tag(id)).toContain('<h2')
+    }
+    expect(html).not.toContain('⌄ 文件树'); expect(html).not.toContain('⌄ 文件大纲')
+    expect(html).toContain('aria-labelledby="paper-files-title"'); expect(html).toContain('aria-labelledby="outline-title"')
+  })
+  it('translates plain sidebar headings without restoring decorative font arrows', () => {
+    for (const [locale, tree, outline] of [['zh-CN', '文件树', '文件大纲'], ['en', 'File tree', 'File outline'], ['ko', '파일 트리', '파일 개요']] as const) {
+      expect(translate('文件树', locale)).toBe(tree); expect(translate('文件大纲', locale)).toBe(outline)
+    }
+  })
   it('keeps the editor/PDF layout and provides an independent reference-based History mode', () => {
     expect(editor.indexOf('id="editor-panel"')).toBeLessThan(editor.indexOf('aria-label="PDF 预览"'))
     expect(editor.indexOf('id="revision-panel"')).toBeGreaterThan(editor.indexOf('aria-label="PDF 预览"'))
