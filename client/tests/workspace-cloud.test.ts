@@ -4,9 +4,10 @@ import type { CollaborationState } from '../src/shared/collaboration-contracts'
 import type { CredentialVault } from '../src/main/github/credentials'
 import { WorkspaceCloud, type CloudWorkflowHost } from '../src/main/workspace/cloud-workflows'
 
-const st = vi.hoisted(() => ({ binding: vi.fn(), connect: vi.fn(), clone: vi.fn() }))
+const st = vi.hoisted(() => ({ binding: vi.fn(), connect: vi.fn(), clone: vi.fn(), roots: [] as string[] }))
 vi.mock('../src/main/github/cloud-binding', () => ({ readCloudBinding: st.binding }))
 vi.mock('../src/main/github/repository', () => ({ GitHubRepository: class {
+  constructor(root: string) { st.roots.push(root) }
   connectWithAccess(...args: unknown[]) { return st.connect(...args) }
   cloneWithAccess(...args: unknown[]) { return st.clone(...args) }
 } }))
@@ -44,7 +45,7 @@ function fixture() {
     invalidate: () => { sessionActive = false }, edit: () => { epoch++ }, root: (value: string | null) => { root = value } }
 }
 
-beforeEach(() => { vi.clearAllMocks(); st.binding.mockReset().mockResolvedValue(null); st.connect.mockResolvedValue(undefined); st.clone.mockResolvedValue(undefined) })
+beforeEach(() => { vi.clearAllMocks(); st.roots.length = 0; st.binding.mockReset().mockResolvedValue(null); st.connect.mockResolvedValue(undefined); st.clone.mockResolvedValue(undefined) })
 
 describe('ordinary private GitHub workspace orchestration', () => {
   it('opens only the host-controlled App authorization entry', async () => {
@@ -97,6 +98,60 @@ describe('ordinary private GitHub workspace orchestration', () => {
     expect(f.account.projectForLink).toHaveBeenCalledWith('https://github.com/alice/paper')
     expect(f.account.withSelectedProjectAccess.mock.calls[0]![0]).toBe('linked')
     expect(st.clone).toHaveBeenCalledOnce(); expect(f.host.activate).toHaveBeenCalledOnce()
+  })
+
+  it.each(['latexstudio://join/alice/paper.git', 'https://github.com/alice/paper.git/'])('joins %s through the original selected private repository and local chooser', async link => {
+    const f = fixture(), literal = { ...project, name: 'paper.git' }
+    f.account.projectForLink.mockResolvedValueOnce({ handle: 'literal-dot-git', project: literal })
+    f.account.withSelectedProjectAccess.mockImplementationOnce(async (_handle, action) => action({ project: literal }))
+    expect(await f.cloud.joinProject(link)).toMatchObject({ root: '/fixture/download' })
+    expect(f.account.projectForLink).toHaveBeenCalledExactlyOnceWith('https://github.com/alice/paper.git')
+    expect(f.host.confirmLeave).toHaveBeenCalledOnce()
+    expect(f.host.directory).toHaveBeenCalledExactlyOnceWith('选择空文件夹下载 GitHub 私有论文项目')
+    expect(f.host.transfer).toHaveBeenCalledWith('clone', expect.any(Function))
+    expect(f.account.withSelectedProjectAccess).toHaveBeenCalledWith('literal-dot-git', expect.any(Function), expect.any(Object))
+    expect(st.roots).toEqual(['/fixture/download'])
+    expect(st.clone.mock.calls[0]![0]).toEqual({ project: literal })
+    expect(f.host.activate).toHaveBeenCalledWith('/fixture/download', expect.any(AbortSignal), expect.any(Function))
+    expect(f.account.createPrivateProject).not.toHaveBeenCalled(); expect(st.connect).not.toHaveBeenCalled()
+    expect(f.repo.sync).not.toHaveBeenCalled()
+  })
+
+  it.each(['latexstudio://join/alice/paper?x=1', 'latexstudio://join/alice/%2e%2e',
+    'https://PRIVATE@github.com/alice/paper', 'file:///paper'])('rejects %s before account lookup or native directory work', async link => {
+    const f = fixture()
+    await expect(f.cloud.joinProject(link)).rejects.toThrow('项目分享链接无效')
+    expect(f.account.projectForLink).not.toHaveBeenCalled(); expect(f.host.confirmLeave).not.toHaveBeenCalled()
+    expect(f.host.directory).not.toHaveBeenCalled(); expect(f.host.transfer).not.toHaveBeenCalled()
+    expect(st.clone).not.toHaveBeenCalled(); expect(f.host.root()).toBe('/fixture/local')
+  })
+
+  it.each(['draft-declined', 'folder-canceled'] as const)('keeps original project/root/binding when join is %s', async reason => {
+    const f = fixture(); st.binding.mockResolvedValue(binding)
+    if (reason === 'draft-declined') f.host.confirmLeave.mockResolvedValueOnce(false)
+    else f.host.directory.mockResolvedValueOnce(null)
+    expect(await f.cloud.joinProject('latexstudio://join/alice/paper')).toBeNull()
+    expect(f.host.root()).toBe('/fixture/local')
+    expect(await f.cloud.status()).toMatchObject({ connection: { projectId: 1, owner: 'alice', name: 'paper', branch: 'main' } })
+    expect(f.account.withSelectedProjectAccess).not.toHaveBeenCalled(); expect(st.roots).toEqual([])
+    expect(st.clone).not.toHaveBeenCalled(); expect(f.host.activate).not.toHaveBeenCalled()
+    expect(f.account.createPrivateProject).not.toHaveBeenCalled(); expect(st.connect).not.toHaveBeenCalled()
+    if (reason === 'draft-declined') expect(f.host.directory).not.toHaveBeenCalled()
+  })
+
+  it('keeps subsequent edit/sync on the downloaded original binding, never creates a new repository', async () => {
+    const f = fixture()
+    f.host.activate.mockImplementationOnce(async (root: string) => {
+      f.root(root); st.binding.mockResolvedValue(binding); return { root }
+    })
+    await f.cloud.joinProject('latexstudio://join/alice/paper')
+    f.dirty(true); await expect(f.cloud.sync('edit', false)).rejects.toThrow('先保存')
+    f.dirty(false); await expect(f.cloud.sync('edit', false)).resolves.toMatchObject({ uploaded: true })
+    expect(f.host.root()).toBe('/fixture/download')
+    expect(await f.cloud.shareProject()).toBe('https://github.com/alice/paper')
+    expect(f.repo.sync).toHaveBeenCalledExactlyOnceWith('edit', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(f.account.createPrivateProject).not.toHaveBeenCalled(); expect(st.connect).not.toHaveBeenCalled()
+    expect(f.host.directory).toHaveBeenCalledOnce()
   })
 
   it('carries a true session guard through activation and does not switch on a late logout', async () => {

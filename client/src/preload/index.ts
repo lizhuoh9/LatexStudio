@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { DESKTOP_LINKS_CHANNELS as D, type DesktopLinksApi } from '../shared/desktop-links-contracts'
+import { parseProjectLink } from '../shared/project-links'
 import { PREFERENCES_CHANNELS as L, isUiLocale, type PreferencesApi, type PreferencesState } from '../shared/locale-contracts'
 import { UPDATE_CHANNELS as U, type UpdateApi, type UpdateState } from '../shared/update-contracts'
 import { CLOUD_CHANNELS as G, type CloudApi } from '../shared/cloud-contracts'
@@ -40,6 +42,20 @@ const api: WorkspaceApi = Object.freeze<WorkspaceApi>({
 })
 
 contextBridge.exposeInMainWorld('paperstudio', api)
+const desktopLinks: DesktopLinksApi = Object.freeze<DesktopLinksApi>({
+  pending: () => ipcRenderer.invoke(D.pending),
+  acknowledge: link => ipcRenderer.invoke(D.acknowledge, link),
+  onLink: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, link: unknown): void => {
+      let canonical: string
+      try { canonical = parseProjectLink(link).appUrl } catch { return }
+      if (link === canonical) listener(canonical)
+    }
+    ipcRenderer.on(D.link, handler)
+    return () => { ipcRenderer.removeListener(D.link, handler) }
+  }
+})
+contextBridge.exposeInMainWorld('paperstudioDesktopLinks', desktopLinks)
 const preferences: PreferencesApi = Object.freeze<PreferencesApi>({
   get: () => ipcRenderer.invoke(L.get),
   set: locale => ipcRenderer.invoke(L.set, locale),

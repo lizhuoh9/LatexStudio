@@ -76,7 +76,16 @@ export async function acceptInvitation(context: ProjectActionContext, scope: Rep
   const current = (await listInvitations(context, scope)).find(value => value.id === selected.id)
   if (!current || !sameInvitation(current, selected)) throw new CollaborationError('selection')
   await actionStep(context, scope, () => scope.remoteWrite(() => context.transport.acceptInvitation(selected.id, context.token, scope.signal)))
-  return availability(context, scope, { id: selected.projectId, owner: selected.owner, name: selected.name, private: true })
+  const value: Omit<CreatedPrivateProject, 'accessible'> = { id: selected.projectId, owner: selected.owner, name: selected.name, private: true }
+  try { return await availability(context, scope, value) }
+  catch (error) {
+    // The validated invitation PATCH already succeeded. A temporarily unavailable
+    // installation listing grants no access and must not encourage another PATCH.
+    context.check(); scope.check()
+    const code = readOperationDiagnostic(error)
+    if (readRepositoryOperationFailure(error)?.cleanupFailed || !['network', 'forbidden'].includes(code ?? '')) throw error
+    return { ...value, accessible: false }
+  }
 }
 export async function inviteCollaborator(context: ProjectActionContext, scope: RepositoryOperationScope,
   owner: string, name: string, login: string, projectId: number): Promise<CollaboratorInvitationResult> {

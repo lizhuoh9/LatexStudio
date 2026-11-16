@@ -10,6 +10,9 @@ import { forbiddenSwitch } from './startup-guard'
 import { UpdateController } from './update-controller'
 import { setLocale, translate } from '../shared/i18n'
 import { LocalePreferences, LocalePreferencesController } from './workspace/locale'
+import { DesktopLinksController, registerDesktopLinkEvents, registerProjectProtocol } from './desktop-links'
+
+const desktopLinks = new DesktopLinksController()
 
 app.enableSandbox()
 app.setAppUserModelId('org.paperstudio.desktop')
@@ -39,6 +42,7 @@ function guardQuit(window: BrowserWindow, controller: { requestClose(): Promise<
 }
 
 async function start(): Promise<void> {
+  registerProjectProtocol()
   const dataRoot = app.getPath('userData')
   const preferenceStore = new LocalePreferences(dataRoot)
   setLocale((await preferenceStore.load()).locale)
@@ -46,6 +50,7 @@ async function start(): Promise<void> {
   app.setAboutPanelOptions({ applicationName: 'LatexStudio', applicationVersion: app.getVersion() })
   restrictSession(session.fromPartition(SETTINGS_PARTITION))
   const { window, url } = createWorkspaceWindow()
+  desktopLinks.attach(window, url)
   const preferences = new LocalePreferencesController(window, url, preferenceStore, () => installWorkspaceMenu())
   preferences.register()
   const setup = new TexSetupController(window, url, dataRoot)
@@ -58,6 +63,7 @@ async function start(): Promise<void> {
   const updates = new UpdateController(window, url)
   updates.register()
   guardQuit(window, { requestClose: async () => {
+    desktopLinks.blockNewActions()
     setup.blockNewActions()
     collaboration.blockNewActions()
     let accepted = false
@@ -66,7 +72,9 @@ async function start(): Promise<void> {
       accepted = await controller.requestClose()
       return accepted
     } finally {
-      if (!accepted) { setup.resumeActions(); collaboration.resumeActions(); preferences.resumeActions() }
+      if (!accepted) {
+        setup.resumeActions(); collaboration.resumeActions(); preferences.resumeActions(); desktopLinks.resumeActions()
+      }
     }
   } })
   await controller.initialize()
@@ -78,10 +86,7 @@ async function start(): Promise<void> {
 if (app.isPackaged && forbiddenSwitch(name => app.commandLine.hasSwitch(name))) app.exit(1) // before any window exists
 else if (!app.requestSingleInstanceLock()) app.quit()
 else {
-  app.on('second-instance', () => {
-    const window = BrowserWindow.getAllWindows()[0]
-    if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus() }
-  })
+  registerDesktopLinkEvents(desktopLinks)
   void app.whenReady().then(start).catch(() => {
     dialog.showErrorBox(translate('LatexStudio 无法启动'), translate('无法载入本地工作台。请重新安装或检查应用目录权限。'))
     app.exit(1)

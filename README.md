@@ -23,6 +23,12 @@ An independent project homepage opens a single-paper editor: files and chapter o
 
 Local editing requires no account. GitHub login opens the official device-authorization page; the short code is still required. Version 0.3.8 automatically rotates device-flow access/refresh credentials in Main, stores them only under OS encryption, and revalidates identity before restored authority. Short access-token expiry no longer requires repeated manual login; temporary offline startup retries automatically. Logout removes local login. Revoked/expired refresh authorization or unavailable secure storage remain exceptions. Upgrading an old access-only record requires one explicit login to obtain a renewable pair. No App secret, credentials in Renderer/source, or globally disabled GitHub expiry. Paper repositories, documents and credentials are separate from this software repository.
 
+## Share and join a project
+
+Sync the files you intend to share, then click **Share** to copy a `latexstudio://join/owner/repository` link. The recipient can open it with an installed app, or choose **Join project** on the homepage and paste it (a normal GitHub HTTPS repository URL also works). After explicit confirmation, choose an empty local folder and download; editing and Sync keep the original repository, not a newly created remote copy. Opening a link alone never signs in, accepts an invitation, selects a folder or transfers files.
+
+Private repository membership and the owning account's GitHub App installation scope are still required. A link is not an access credential. Development/portable copies do not claim the OS protocol; paste the link inside the app instead. See the [sharing guide](docs/PROJECT-SHARING.md) for permissions, cancellation and the clearly separated mocked desktop versus real-account verification boundaries.
+
 ## Build from source
 
 Use Node.js 24 LTS and the exact lockfile:

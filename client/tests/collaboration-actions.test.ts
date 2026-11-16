@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { GitHubAccountService, type ReadonlyProjectAccess } from '../src/main/collaboration/service'
 import { assertWritableProjectAccess } from '../src/main/collaboration/project-access'
-import { readRepositoryOperationFailure } from '../src/main/github/repository-operation'
+import { readRepositoryOperationFailure, withRepositoryOperation } from '../src/main/github/repository-operation'
+import { CollaborationError } from '../src/main/collaboration/validation'
 
 // Synthetic Fetch/Git-protocol only: no real account, permissions, network writes, Vault or install proof.
 const audit = vi.hoisted(() => ({ failClose: false }))
@@ -162,6 +163,65 @@ it('issues only session-bound opaque private invitations, rechecks and accepts a
 it('accepts membership but does not pretend an uninstalled project became accessible', async () => {
   const { service, server } = await signedIn(), [item] = await service.invitations(); server.repositories = []
   expect(await service.acceptInvitation(item!.handle)).toMatchObject({ accessible: false })
+})
+it.each([403, 503])('preserves a confirmed invitation acceptance when installation listing returns %s', async status => {
+  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? json({ message: token }, status) : undefined)
+  const [item] = await service.invitations(), before = fetcher.mock.calls.length
+  const result = await service.acceptInvitation(item!.handle)
+  expect(result).toEqual({ id: 42, owner: 'lab-user', name: 'paper', private: true, accessible: false })
+  expect(JSON.stringify(result)).not.toContain(token)
+  expect(fetcher.mock.calls.slice(before).filter(([, init]) => ['POST', 'PUT', 'PATCH'].includes(init?.method ?? ''))
+    .map(([url, init]) => [String(url), init?.method])).toEqual([['https://api.github.com/user/repository_invitations/88', 'PATCH']])
+  const after = fetcher.mock.calls.length
+  await expect(service.acceptInvitation(item!.handle)).rejects.toThrow('选择已失效')
+  expect(fetcher).toHaveBeenCalledTimes(after)
+})
+it.each([201, 403, 503])('does not turn a non-204 acceptance response %s into confirmed membership', async status => {
+  const { service, fetcher } = await signedIn((url, init) => url.pathname === '/user/repository_invitations/88' && init?.method === 'PATCH'
+    ? json({ message: token }, status) : undefined)
+  const [item] = await service.invitations()
+  const error = await caught(service.acceptInvitation(item!.handle))
+  expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
+  expect(String(error)).not.toContain(token)
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
+  expect(fetcher.mock.calls.some(([url]) => String(url).includes('/user/installations'))).toBe(false)
+})
+it('does not hide a changed repository identity after confirmed invitation acceptance', async () => {
+  const { service, server, fetcher } = await signedIn(), [item] = await service.invitations()
+  server.repositories = [{ ...repository, name: 'renamed-paper' }]
+  const error = await caught(service.acceptInvitation(item!.handle))
+  expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
+})
+it.each(['cancel', 'expiry', 'deadline'] as const)('does not return confirmed membership after %s interrupts discovery', async interruption => {
+  let interrupt: () => void = () => undefined
+  const { service, fetcher, advance } = await signedIn(url => {
+    if (url.pathname === '/user/installations') { interrupt(); return json({ message: token }, 403) }
+  })
+  const [item] = await service.invitations(), abort = new AbortController()
+  interrupt = () => {
+    if (interruption === 'cancel') abort.abort()
+    else if (interruption === 'expiry') advance(300001)
+    else vi.spyOn(performance, 'now').mockReturnValue(1_000_000)
+  }
+  const error = await caught(service.acceptInvitation(item!.handle, { signal: abort.signal }))
+  expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
+  expect(String(error)).not.toContain(token)
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
+})
+it('retains a known discovery cleanup veto after confirmed invitation acceptance', async () => {
+  const cleanup = await caught(withRepositoryOperation({}, async scope => {
+    scope.own({ close: async () => { throw new Error(token) } })
+    throw new CollaborationError('network')
+  }))
+  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? Promise.reject(cleanup) : undefined)
+  const [item] = await service.invitations(), error = await caught(service.acceptInvitation(item!.handle))
+  expect(readRepositoryOperationFailure(error)).toMatchObject({ cleanupFailed: true, remoteWriteMayHaveCompleted: true })
+  expect(String(error)).not.toContain(token)
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
+  const before = fetcher.mock.calls.length
+  expect(await caught(service.invitations())).toBe(error)
+  expect(fetcher).toHaveBeenCalledTimes(before)
 })
 it.each(['removed', 'renamed', 'different-invitee'])('does not accept stale or changed invitation: %s', async change => {
   const { service, server, fetcher } = await signedIn(), [item] = await service.invitations()

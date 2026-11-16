@@ -1,6 +1,7 @@
 import { UI_TRANSLATIONS, UI_PATTERNS } from './i18n-ui'
 import { MESSAGE_TRANSLATIONS, MESSAGE_PATTERNS } from './i18n-messages'
 import { NATIVE_TRANSLATIONS, NATIVE_PATTERNS } from './i18n-native'
+import { SHARING_TRANSLATIONS, SHARING_PATTERNS } from './i18n-sharing'
 
 export type UiLocale = 'zh-CN' | 'en' | 'ko'
 export type Translation = readonly [source: string, english: string, korean: string]
@@ -19,8 +20,8 @@ export function setLocale(locale: UiLocale): void {
 }
 
 function combine(...groups: readonly (readonly Translation[])[]): readonly Translation[] { return groups.flat() }
-export const translationEntries = combine(UI_TRANSLATIONS, NATIVE_TRANSLATIONS, MESSAGE_TRANSLATIONS)
-export const translationPatterns = combine(UI_PATTERNS, NATIVE_PATTERNS, MESSAGE_PATTERNS)
+export const translationEntries = combine(UI_TRANSLATIONS, NATIVE_TRANSLATIONS, MESSAGE_TRANSLATIONS, SHARING_TRANSLATIONS)
+export const translationPatterns = combine(UI_PATTERNS, NATIVE_PATTERNS, MESSAGE_PATTERNS, SHARING_PATTERNS)
 const messages = new Map<string, readonly [string, string]>()
 for (const [source, en, ko] of translationEntries) if (!messages.has(source)) messages.set(source, [en, ko])
 const patterns = translationPatterns.map(entry => ({ entry, parts: entry[0].split(/(\{\d+\})/g) }))

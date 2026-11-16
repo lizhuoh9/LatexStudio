@@ -16,6 +16,9 @@ import type { ProjectLibraryApi } from '../shared/project-library-contracts'
 import { ProjectLibraryPanel } from './project-library-panel'
 import type { CloudApi } from '../shared/cloud-contracts'
 import { CloudProjectPanel } from './cloud-project-panel'
+import { SharingPanel } from './sharing-panel'
+import { adoptCommittedProject } from './adopt-committed-project'
+import type { DesktopLinksApi } from '../shared/desktop-links-contracts'
 import agplLicense from '../vendor/ayakaleaf/LICENSE.txt?raw'
 import thirdPartyNotices from '../../THIRD_PARTY_NOTICES.md?raw'
 import type { ProjectFile, ProjectInfo, TexEngine, TexEnvironment, WorkspaceApi, WorkspaceEvent } from '../shared/workspace-contracts'
@@ -61,6 +64,7 @@ class Workbench {
   private splitter: WorkspaceSplitter
   private outline: FileOutline | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
+  private sharing: SharingPanel | null = null
   private cloud: CloudProjectPanel
   private library: ProjectLibraryPanel
   private repositoryTransfer: RepositoryTransferPanel
@@ -91,7 +95,7 @@ class Workbench {
     const setupApi = (window as Window & { paperstudioSetup?: TexSetupApi }).paperstudioSetup
     this.setup = new SetupPanel(setupApi, () => this.setupChanged())
     const collaborationApi = (window as Window & { paperstudioCollaboration?: CollaborationApi }).paperstudioCollaboration
-    this.collaboration = new CollaborationPanel(collaborationApi, undefined, () => { this.startup?.update(); this.account?.update() })
+    this.collaboration = new CollaborationPanel(collaborationApi, undefined, () => { this.startup?.update(); this.account?.update(); this.sharing?.accountChanged() })
     this.account = new AccountMenu(this.collaboration.model, () => {
       if (!this.closing) element<HTMLDialogElement>('cloud-dialog').showModal()
     })
@@ -104,6 +108,7 @@ class Workbench {
     const cloudApi = (window as Window & { paperstudioCloud?: CloudApi }).paperstudioCloud
     this.cloud = new CloudProjectPanel(cloudApi, this.documents, this.dialogs, this.run,
       project => this.adopt(project), message => this.notify(message), login => this.setupSync(login))
+    this.initializeSharing(cloudApi)
     const unsubscribeCloud = collaborationApi?.onState(() => { void this.cloud.refresh() })
     const projectApi = (window as Window & { paperstudioProjects?: ProjectLibraryApi }).paperstudioProjects
     this.library = new ProjectLibraryPanel(projectApi, this.documents, this.dialogs, this.run,
@@ -113,6 +118,7 @@ class Workbench {
     this.language = new LocalePanel()
     window.addEventListener('unload', () => {
       this.language.dispose()
+      this.sharing?.dispose()
       this.editor.destroy()
       this.startup?.dispose()
       this.layout.dispose()
@@ -134,7 +140,9 @@ class Workbench {
     text('license-text', agplLicense)
     text('notices-text', thirdPartyNotices)
     api.onEvent((event) => this.event(event))
-    this.run('初始化本地工作区', () => this.initialize())
+    this.run('初始化本地工作区', async () => {
+      try { await this.initialize() } finally { this.sharing?.markReady() }
+    })
   }
 
   private notify(message: string): void {
@@ -167,6 +175,7 @@ class Workbench {
       this.updateControls()
       this.flushExternal()
       if (freeze || ['保存文件', '新建文件', '另存副本', '本机编译', '检查本地文件变化'].includes(label)) this.sync.refreshVisible()
+      this.sharing?.flushPending()
     }
   }
 
@@ -190,6 +199,17 @@ class Workbench {
     } else element('project-settings').click()
   }
 
+  private initializeSharing(api: CloudApi | undefined): void {
+    const links = (window as Window & { paperstudioDesktopLinks?: DesktopLinksApi }).paperstudioDesktopLinks
+    this.sharing = new SharingPanel(api, links, this.documents, this.collaboration.model, this.run,
+      project => this.adopt(project), () => {
+        if (this.busy || this.closing || document.querySelector('dialog[open]')) return
+        element<HTMLDialogElement>('cloud-dialog').showModal()
+        this.collaboration.startLogin()
+      }, () => element('project-settings').click(), () => !this.busy && !this.closing && !document.body.inert,
+      () => this.api.cancelRepositoryTransfer())
+  }
+
   private bindActions(): void {
     button('project-open', () => this.run('打开本地项目', () => this.switchProject('open'), true))
     button('project-create', () => this.run('创建本地项目', () => this.switchProject('create'), true))
@@ -207,7 +227,12 @@ class Workbench {
     button('pdf-larger', () => this.run('放大预览', () => this.pdf.scale(0.1)))
     button('about-open', () => element<HTMLDialogElement>('about-dialog').showModal())
     button('dashboard-help', () => element<HTMLDialogElement>('about-dialog').showModal())
-    button('project-share', () => { if (!this.closing && this.documents.project) element('project-settings').click() })
+    button('project-share', () => { if (!this.busy && !this.closing) this.sharing?.openShare() })
+    for (const id of ['home-join', 'project-join']) button(id, () => {
+      if (this.busy || this.closing) return
+      element<HTMLDetailsElement>('account-menu').open = false
+      this.sharing?.openJoin()
+    })
     for (const command of ['undo', 'redo', 'bold', 'italic', 'search'] as const) {
       button(`edit-${command}`, () => { if (!this.closing && !this.busy) this.editor.runCommand(command) })
     }
@@ -296,8 +321,7 @@ class Workbench {
 
   private async adopt(project: ProjectInfo): Promise<void> {
     this.pendingExternal.clear()
-    await this.pdf.clear()
-    await this.documents.adopt(project)
+    await adoptCommittedProject(project, () => this.pdf.clear(), next => this.documents.adopt(next), message => this.notify(message))
     this.showEditor()
     void this.library.refresh()
     text('log', `已打开本地项目：${project.name}\n`)
@@ -306,6 +330,7 @@ class Workbench {
 
   private renderProject(project: ProjectInfo): void {
     this.cloud.projectChanged()
+    this.sharing?.projectChanged()
     this.sync.projectChanged()
     element('project-actions').hidden = false
     text('project-settings-name', project.name)
@@ -394,6 +419,7 @@ class Workbench {
     this.splitter.setClosing(closing)
     this.outline?.setClosing(closing)
     this.cloud.setClosing(closing)
+    this.sharing?.setClosing(closing)
     this.library.setClosing(closing)
     this.repositoryTransfer.setClosing(closing)
     this.updates.setClosing(closing)
@@ -409,7 +435,7 @@ class Workbench {
       this.frozen.clear()
     }
     this.updateControls()
-    if (!closing) { this.setupChanged(); this.notify('已取消关闭，可继续编辑。'); this.flushExternal() }
+    if (!closing) { this.setupChanged(); this.notify('已取消关闭，可继续编辑。'); this.flushExternal(); this.sharing?.flushPending() }
   }
 
   private event(event: WorkspaceEvent): void {

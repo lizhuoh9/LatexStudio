@@ -5,7 +5,7 @@ import { publicProject } from '../collaboration/public-state'
 import { GitHubRepository } from '../github/repository'
 import { readCloudBinding } from '../github/cloud-binding'
 import type { CredentialVault } from '../github/credentials'
-import { githubTarget } from '../github/remote-policy'
+import { parseProjectLink } from '../../shared/project-links'
 import type { RepositoryOperationOptions } from '../github/repository-operation'
 import { requireText } from './validation'
 
@@ -109,7 +109,7 @@ export class WorkspaceCloud implements CloudApi {
   }
 
   async joinProject(link: string): Promise<ProjectInfo | null> {
-    const selected = await this.account.projectForLink(requireText(link, '项目分享链接', 2048))
+    const selected = await this.account.projectForLink(parseProjectLink(link).githubUrl)
     return this.downloadProject(selected.handle)
   }
 
@@ -117,7 +117,7 @@ export class WorkspaceCloud implements CloudApi {
     const binding = await this.requireBinding()
     return this.account.withProjectAccess(binding.projectId, async access => {
       this.checkBinding(binding, access.project)
-      return githubTarget(`https://github.com/${binding.owner}/${binding.name}.git`).url.replace(/\.git$/, '')
+      return parseProjectLink(`https://github.com/${binding.owner}/${binding.name}`).githubUrl
     })
   }
 
