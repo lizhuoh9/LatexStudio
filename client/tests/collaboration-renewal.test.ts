@@ -38,6 +38,17 @@ async function flush() { for (let i = 0; i < 500; i++) await Promise.resolve() }
 afterEach(async () => { await Promise.all(services.splice(0).map(service => service.cancelAndWait())); vi.useRealTimers() })
 
 describe('encrypted persistent device-flow login with rotating refresh credentials', () => {
+  it('retries fresh identity verification in 30 seconds after live rotation, not at the next access expiry', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const saved = store(), item = fixture([device, grant, profile, rotated, new Error('OFFLINE_PROFILE_CANARY'), profile], saved.api)
+    item.service.startLogin(); await flush(); item.setClock(NOW + 8 * HOUR + 6000)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', renewable: true, account: null })
+    expect(saved.saved()).toMatchObject({ token: rotated.access_token, refreshToken: rotated.refresh_token })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(item.service.status()).toMatchObject({ phase: 'signed-in', renewable: true, account: { id: 7 } })
+    expect(item.fetcher.mock.calls.filter(([, init]) => String(init?.body).includes('grant_type=refresh_token'))).toHaveLength(1)
+    expect(item.open).toHaveBeenCalledOnce()
+  })
   it('withholds the synchronous local-workspace commit guard while a rotated credential awaits fresh identity verification', async () => {
     let release!: (value: Response) => void
     const pending = new Promise<Response>(done => { release = done })

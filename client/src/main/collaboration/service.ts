@@ -641,7 +641,8 @@ export class GitHubAccountService {
     const renewable = liveRefresh(this.session, this.now())
     if (renewable && (this.backgroundPaused || this.quiescing || this.renewalWork)) return
     const generation = this.generation
-    const delay = renewable ? Math.max(retryMs, accessRemaining(this.session, this.now()) - RENEW_BEFORE_MS) : Math.max(0, accessRemaining(this.session, this.now()))
+    const renewalDelay = this.session.validated === false ? retryMs : Math.max(retryMs, accessRemaining(this.session, this.now()) - RENEW_BEFORE_MS)
+    const delay = renewable ? renewalDelay : Math.max(0, accessRemaining(this.session, this.now()))
     this.expiryTimer = setTimeout(() => {
       this.expiryTimer = null
       if (generation !== this.generation || !this.session) return
