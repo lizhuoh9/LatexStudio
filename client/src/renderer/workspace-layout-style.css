@@ -87,17 +87,23 @@ body[data-ui-theme="overleaf"] #file-save kbd { display: none; }
 .tool-separator { height: 16px; width: 1px; margin-inline: 5px; background: #536074; }
 .source-mode { margin-left: auto; padding: 0 9px; color: #fff; background: #087f43; border-radius: 12px; font-size: 11px; }
 body[data-ui-theme="overleaf"] .preview-panel { grid-area: preview; background: var(--frame-bg); }
-body[data-ui-theme="overleaf"] .preview-toolbar { background: var(--frame-bg); color: var(--nav-text); min-height: 36px; border-color: #263243; padding: 3px 6px; flex-wrap: wrap; gap: 3px; }
+body[data-ui-theme="overleaf"] .preview-toolbar { position: relative; background: var(--frame-bg); color: var(--nav-text); min-height: 36px; border-color: #263243; padding: 3px 6px; flex-wrap: wrap; gap: 3px; }
 .compile-actions { display: flex; align-items: center; gap: 3px; }
 body[data-ui-theme="overleaf"] #compile { display: block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; min-width: 92px; min-height: 28px; padding: 2px 14px; border-radius: 18px; background: #087f43; color: #fff; }
 body[data-ui-theme="overleaf"] #cancel-compile { min-width: 50px; color: #e0e6ef; padding: 2px 5px; }
 body[data-ui-theme="overleaf"] #cancel-compile:disabled { display: none; }
-body[data-ui-theme="overleaf"] .advanced-compile { color: #edf1f7; }
-body[data-ui-theme="overleaf"] .advanced-compile summary { padding: 3px 7px; white-space: nowrap; border: 1px solid #56657b; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile { position: static; color: #edf1f7; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile > summary { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 28px; padding: 3px 8px; line-height: 1.2; white-space: nowrap; list-style: none; color: #edf1f7; background: transparent; border: 1px solid #6b7c93; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile > summary::-webkit-details-marker { display: none; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile > summary::marker { content: ''; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile > summary::after { content: ''; display: block; flex: 0 0 auto; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile[open] > summary::after { transform: translateY(2px) rotate(225deg); }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile > summary:is(:hover, :focus-visible), body[data-ui-theme="overleaf"] .preview-toolbar .advanced-compile[open] > summary { background: #41516a; color: #ffffff; border-color: #8d9bb0; }
+body[data-ui-theme="overleaf"] :is(.editor-toolbar, .preview-toolbar) :is(button.text-button, button.icon-button):is(:hover, :focus-visible):not(:disabled) { background: #41516a; color: #ffffff; }
+body[data-ui-theme="overleaf"] :is(.editor-toolbar button, .preview-toolbar button, .preview-toolbar summary):focus-visible { outline: 2px solid #a5dfbd; outline-offset: 2px; }
 body[data-ui-theme="overleaf"] .pdf-controls { flex-wrap: wrap; flex-shrink: 0; }
 body[data-ui-theme="overleaf"] .pdf-controls button:is(:hover, :focus-visible):not(:disabled) { background: #41516a; color: #ffffff; }
-body[data-ui-theme="overleaf"] .advanced-compile summary::after { display: none; }
-body[data-ui-theme="overleaf"] .advanced-fields { color: #303030; }
+body[data-ui-theme="overleaf"] .preview-toolbar .advanced-fields { color: #303030; right: 6px; top: calc(100% + 4px); max-width: calc(100% - 12px); }
 body[data-ui-theme="overleaf"] .environment { color: #c4cddd; font-size: 10px; max-width: 120px; flex: 1; }
 body[data-ui-theme="overleaf"] .pdf-controls { margin-left: auto; color: #e0e6ef; }
 body[data-ui-theme="overleaf"] .pdf-controls button, body[data-ui-theme="overleaf"] #pdf-position { color: inherit; }
@@ -133,7 +139,7 @@ body[data-history="open"] .history-back { color: #202b38; background: #fff; bord
 body[data-ui-theme="overleaf"] #log-panel { grid-area: logs; background: #f7f8fa; border-left: 3px solid var(--frame-border); }
 body[data-ui-theme="overleaf"] #log-panel > .panel-heading { min-height: 32px; }
 body[data-ui-theme="overleaf"] #log-open { color: #d6e3f3; font-size: 11px; border-radius: 4px; }
-body[data-ui-theme="overleaf"] #log-open[aria-expanded="true"] { background: #44566e; }
+body[data-ui-theme="overleaf"] #log-open:is(:hover, :focus-visible), body[data-ui-theme="overleaf"] #log-open[aria-expanded="true"] { background: #41516a; color: #ffffff; border-color: #8d9bb0; }
 @media (max-width: 1200px) {
   body[data-ui-theme="overleaf"] { --file-tree-width: 240px; }
   body[data-ui-theme="overleaf"] .workspace:has(#revision-panel:not([hidden])) { grid-template-columns: var(--file-tree-width) minmax(160px,var(--source-track,1.15fr)) minmax(160px,var(--preview-track,1fr)) 280px; }

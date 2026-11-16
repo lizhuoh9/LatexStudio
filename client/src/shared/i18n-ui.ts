@@ -93,7 +93,7 @@ export const UI_TRANSLATIONS = [
   ['停止编译', 'Stop compilation', '컴파일 중지'],
   ['■ 停止', '■ Stop', '■ 중지'],
   ['编译选项', 'Compile options', '컴파일 옵션'],
-  ['选项 ⌄', 'Options ⌄', '옵션 ⌄'],
+  ['选项', 'Options', '옵션'],
   ['主文件', 'Main file', '주 파일'],
   ['编译主文件', 'Main file to compile', '컴파일할 주 파일'],
   ['自动选择项目主文件', 'Select project main file automatically', '프로젝트 주 파일 자동 선택'],

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { translate } from '../src/shared/i18n'
 const html = readFileSync('src/renderer/index.html', 'utf8')
 const base = readFileSync('src/renderer/style.css', 'utf8'), layout = readFileSync('src/renderer/workspace-layout-style.css', 'utf8')
 const tags = [...html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)], ids = tags.map(match => match[1])
@@ -96,6 +97,31 @@ describe('user-selected Overleaf home/editor layout retains real application con
     expect(layout).toContain('#project-open:focus-visible:not(:disabled) { outline: 2px solid #a5dfbd; outline-offset: 3px;')
     expect(contrast('#ffffff', '#41516a')).toBeGreaterThanOrEqual(4.5)
     expect(contrast('#a5dfbd', '#303c4e')).toBeGreaterThanOrEqual(3)
+  })
+  it('uses one aligned decorative chevron, not a baseline glyph or duplicate native marker', () => {
+    const summary = html.match(/<summary aria-label="编译选项"[^>]*>(.*?)<\/summary>/)?.[1]
+    expect(summary).toBe('<span>选项</span>')
+    expect(translate('选项', 'en')).toBe('Options'); expect(translate('选项', 'ko')).toBe('옵션')
+    expect(layout).toContain('summary::-webkit-details-marker { display: none; }')
+    expect(layout).toContain("summary::marker { content: ''; }")
+    expect(layout).toContain("summary::after { content: ''; display: block; flex: 0 0 auto; width: 6px; height: 6px;")
+    expect(layout).toContain('transform: translateY(-2px) rotate(45deg)')
+    expect(layout).toContain('[open] > summary::after { transform: translateY(2px) rotate(225deg); }')
+  })
+  it('keeps dark compile-toolbar text readable across hover, focus and expanded states', () => {
+    for (const selector of ['.advanced-compile > summary:is(:hover, :focus-visible)', '.advanced-compile[open] > summary', '#log-open:is(:hover, :focus-visible)', '#log-open[aria-expanded="true"]']) expect(layout).toContain(selector)
+    expect(layout).toContain('background: #41516a; color: #ffffff; border-color: #8d9bb0;')
+    expect(layout).toContain('.preview-toolbar summary):focus-visible { outline: 2px solid #a5dfbd; outline-offset: 2px; }')
+    expect(contrast('#ffffff', '#41516a')).toBeGreaterThanOrEqual(4.5)
+    expect(contrast('#edf1f7', '#303c4e')).toBeGreaterThanOrEqual(4.5)
+    expect(contrast('#a5dfbd', '#303c4e')).toBeGreaterThanOrEqual(3)
+  })
+  it('keeps native disclosure behavior and bounds its popup within the PDF toolbar', () => {
+    expect(html).toContain('<details class="advanced-compile"><summary aria-label="编译选项"')
+    expect(layout).toContain('.preview-toolbar { position: relative;')
+    expect(layout).toContain('.preview-toolbar .advanced-compile { position: static;')
+    expect(layout).toContain('display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px;')
+    expect(layout).toContain('.preview-toolbar .advanced-fields { color: #303030; right: 6px; top: calc(100% + 4px); max-width: calc(100% - 12px); }')
   })
   it('matches the reference dark frame, white editor and restrained green actions', () => {
     expect(layout).toContain('--nav-bg: #1c232d'); expect(layout).toContain('--frame-bg: #303c4e')
