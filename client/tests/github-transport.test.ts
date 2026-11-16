@@ -3,6 +3,29 @@ import { githubHttp, verifyGitHub } from '../src/main/github/transport'
 import { checkedLogin, checkedToken, githubTarget, GitHubError, safeBranch } from '../src/main/github/remote-policy'
 import { readVerificationLifecycleFailure } from '../src/main/github/verification-lifecycle'
 
+it('releases discovery HTTP before a Git parser stops at its protocol flush without iterator.return', async () => {
+  const fetcher = fixture(new Response('001e# service=git-upload-pack\n0000'), new Response('0000'))
+  const client = githubHttp(target, token, { fetcher })
+  try {
+    const first = await client.request({ url: discovery })
+    const iterator = (first.body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]()
+    expect((await iterator.next()).done).toBe(false)
+    // isomorphic-git can stop at pkt-line flush without consuming network EOF or returning the iterator.
+    await expect(client.request({ url: discovery })).resolves.toMatchObject({ statusCode: 200 })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  } finally { await client.close() }
+})
+
+it('buffered Git bytes still obey cumulative limits and cannot be consumed after close', async () => {
+  const fetcher = fixture(new Response('1234'), new Response('56'))
+  const client = githubHttp(target, token, { fetcher, limits: { downloadBytes: 5 } })
+  const first = await client.request({ url: discovery })
+  try { await expect(client.request({ url: discovery })).rejects.toThrow('累计传输数据超过安全大小限制') }
+  finally { await client.close() }
+  const iterator = (first.body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]()
+  await expect(iterator.next()).rejects.toThrow('取消')
+})
+
 const target = githubTarget('https://github.com/team/paper')
 const token = 'ghp_fixturecredential'
 const discovery = `${target.url}/info/refs?service=git-upload-pack`
@@ -223,15 +246,14 @@ it('request.signal abort during upload returns the source and permits a later re
   } finally { await client.close() }
 })
 
-it('request.signal abort owns the ready reader but does not close the entire client', async () => {
+it('request.signal abort drains a pending buffered response without closing the entire client', async () => {
   const controller = new AbortController()
   const cancel = vi.fn()
   const fetcher = fixture(new Response(new ReadableStream({ cancel })), new Response('next'))
   const client = githubHttp(target, token, { fetcher })
   try {
-    const response = await client.request({ url: discovery, signal: controller.signal })
-    const iterator = (response.body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]()
-    const pending = iterator.next().catch((error: Error) => error)
+    const pending = client.request({ url: discovery, signal: controller.signal }).catch((error: Error) => error)
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
     controller.abort()
     expect(await pending).toMatchObject({ message: expect.stringContaining('取消') })
     expect(cancel).toHaveBeenCalledTimes(1)

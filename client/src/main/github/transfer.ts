@@ -1,4 +1,5 @@
 import { GitHubError, type GitRequest } from './remote-policy'
+import { rememberOperationDiagnostic, type OperationDiagnostic } from './operation-diagnostic'
 
 export interface TransferLimits {
   clientMs: number
@@ -27,7 +28,12 @@ export interface TransferResponse {
   body: TransferBody
 }
 const cleanupGraceMs = 100
-const networkFailure = () => new GitHubError('GitHub 网络传输失败；未显示敏感请求信息。')
+function transferFailure(message: string, code: OperationDiagnostic): GitHubError {
+  const error = new GitHubError(message)
+  rememberOperationDiagnostic(error, code)
+  return error
+}
+const networkFailure = () => transferFailure('GitHub 网络传输失败；未显示敏感请求信息。', 'git-network')
 const cancelled = () => new GitHubError('GitHub 网络传输已取消。')
 
 function limitsFor(input: Partial<TransferLimits> = {}): TransferLimits {
@@ -106,11 +112,13 @@ class Operation {
     this.failure = reason ?? null
     clearTimeout(this.timer)
     this.requestSignal?.removeEventListener('abort', this.abortRequest)
-    this.controller.abort()
     this.clearParts?.()
     const source = this.source
     const reader = this.reader
+    // Native fetch errors its response stream synchronously on abort. Start owned reader cancellation
+    // first, or a cooperative return() becomes a false cleanup failure that permanently blocks sync.
     const tasks = this.cleanupTasks(source, reader)
+    this.controller.abort()
     const message = source ? '上传源未确认收束；网络请求已中止。' : '响应流未确认收束；网络请求已中止。'
     const grace = Math.max(0, Math.min(cleanupGraceMs, this.deadline - performance.now()))
     void this.settleCleanup(tasks, grace, message).then(() => {
@@ -309,7 +317,10 @@ export class GitHubTransfer {
     if (length !== null && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)) || Number(length) > this.limits.downloadBytes - this.downloaded)) {
       error = new GitHubError('GitHub 响应长度无效或超过安全大小限制。')
     }
-    if (error) { operation.failure = error; throw error }
+    if (error) {
+      rememberOperationDiagnostic(error, response.status === 401 ? 'unauthorized' : response.status === 403 ? 'forbidden' : 'git-response')
+      operation.failure = error; throw error
+    }
   }
 
   private responseHeaders(response: Response): Record<string, string> {

@@ -1,5 +1,5 @@
 /** Closed local codes only. Provider bodies, causes, tokens and URLs are never displayed. */
-export type OperationDiagnostic = 'unauthorized' | 'forbidden' | 'create-forbidden' | 'invalid-repository' | 'network' | 'response'
+export type OperationDiagnostic = 'unauthorized' | 'forbidden' | 'create-forbidden' | 'invalid-repository' | 'network' | 'response' | 'git-fetch' | 'git-network' | 'git-response'
 const codes = new WeakMap<object, OperationDiagnostic>()
 const messages: Record<OperationDiagnostic, string> = {
   unauthorized: 'GitHub 登录已失效，请重新登录后核对远端状态。',
@@ -7,7 +7,10 @@ const messages: Record<OperationDiagnostic, string> = {
   'create-forbidden': 'GitHub 拒绝创建仓库（403）。请在 GitHub App 设置中检查 Administration 或 Repository creation 写权限，批准新增权限并重新登录；账号策略或限流也可能阻止创建。',
   'invalid-repository': 'GitHub 未接受仓库名称或创建参数（422）。请先核对账号下是否已有同名仓库，并检查名称和账号仓库限制。',
   network: 'GitHub 请求或响应未完成，请检查网络；若已提交创建请求，请先核对 GitHub 上是否已有仓库。',
-  response: 'GitHub 返回的信息未通过验证。若已提交创建请求，请先核对远端仓库，不要重复创建。'
+  response: 'GitHub 返回的信息未通过验证。若已提交创建请求，请先核对远端仓库，不要重复创建。',
+  'git-fetch': '读取 GitHub 远端历史失败；本地快照仍保留，尚未进入上传步骤。',
+  'git-network': 'GitHub 文件传输连接未完成；请检查网络后核对远端状态。',
+  'git-response': 'GitHub 文件传输响应未通过长度或格式检查；本地文件仍保留。'
 }
 export function rememberOperationDiagnostic(error: object, code: OperationDiagnostic): void { codes.set(error, code) }
 export function readOperationDiagnostic(error: unknown): OperationDiagnostic | undefined {

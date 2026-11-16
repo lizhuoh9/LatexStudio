@@ -68,8 +68,8 @@ beforeEach(() => {
   run = vi.fn((_label, action) => { if (!workbenchBusy) tasks.push(action()) })
 })
 afterEach(() => { for (const panel of panels.splice(0)) panel.dispose(); vi.useRealTimers(); vi.unstubAllGlobals() })
-function make(bridge: CloudApi | null = api): CloudProjectPanel {
-  const panel = new CloudProjectPanel(bridge ?? undefined, documents, dialogs, run, adopt, notify)
+function make(bridge: CloudApi | null = api, setup?: (login: boolean) => void): CloudProjectPanel {
+  const panel = new CloudProjectPanel(bridge ?? undefined, documents, dialogs, run, adopt, notify, setup)
   panels.push(panel); panel.initialize(); return panel
 }
 async function flush(): Promise<void> { for (let i = 0; i < 15; i += 1) await Promise.resolve() }
@@ -112,7 +112,7 @@ it('uses the same saved guarded path for main-page current-paper sync and settin
   get('project-sync').click(); await settle()
   expect(api.sync).toHaveBeenCalledExactlyOnceWith('current progress', false)
   expect(documents.refresh).toHaveBeenCalledWith(['']); expect(api.status).toHaveBeenCalledTimes(3)
-  expect(dialogs.confirm).toHaveBeenCalledWith('同步当前论文？', expect.stringContaining('不会强制覆盖'))
+  expect(dialogs.confirm).not.toHaveBeenCalled()
   await click('sync'); expect(api.sync).toHaveBeenCalledTimes(2)
   expect(get('cloud-project-workspace').innerHTML).toContain('同步当前论文')
   expect(get('cloud-project-workspace').innerHTML).not.toContain('同步全部')
@@ -129,10 +129,10 @@ it('shows unavailable current-paper sync without a bridge and blocks requests wh
   const missing = make(null); await settle()
   expect(get('project-sync').disabled).toBe(true); expect(get('project-sync-status').textContent).toContain('同步不可用')
   missing.dispose(); const panel = make(); await settle()
-  const confirmation = deferred<boolean>(); vi.mocked(dialogs.confirm).mockReturnValue(confirmation.promise)
+  const pending = deferred<CloudWorkspaceStatus>(); vi.mocked(api.status).mockReturnValueOnce(pending.promise)
   get('project-sync').click(); await flush(); expect(get('project-sync').disabled).toBe(true)
   expect(get('project-sync-status').textContent).toContain('处理中')
-  panel.setClosing(true); get('project-sync').click(); confirmation.resolve(true); await settle()
+  panel.setClosing(true); get('project-sync').click(); pending.resolve(status()); await settle()
   expect(api.sync).not.toHaveBeenCalled(); expect(get('project-sync').disabled).toBe(true)
 })
 it('disables current-paper sync until the latest status refresh completes', async () => {
@@ -168,12 +168,12 @@ it('immediately clears A state on projectChanged and cannot use its stale sync c
   expect(get('project-sync').disabled).toBe(false); expect(get('project-sync-status').textContent).toBe('B · writer-b/paper-b')
   await vi.advanceTimersByTimeAsync(90_000); await settle(); expect(api.sync).not.toHaveBeenCalled()
 })
-it('invalidates an A sync confirmation before B status arrives, without any sync-all fallback', async () => {
-  const panel = make(); await settle(); const confirmation = deferred<boolean>()
-  vi.mocked(dialogs.confirm).mockReturnValueOnce(confirmation.promise)
-  get('project-sync').click(); await flush(); expect(dialogs.confirm).toHaveBeenCalledOnce()
+it('invalidates an A sync preparation before B status arrives, without a confirmation or sync-all fallback', async () => {
+  const panel = make(); await settle(); const pending = deferred<CloudWorkspaceStatus>()
+  vi.mocked(api.status).mockReturnValueOnce(pending.promise)
+  get('project-sync').click(); await flush(); expect(dialogs.confirm).not.toHaveBeenCalled()
   documents.project = project('B'); documents.buffer.editVersion += 1; panel.projectChanged()
-  confirmation.resolve(true); await settle(); expect(api.sync).not.toHaveBeenCalled(); expect(get('project-sync').disabled).toBe(true)
+  pending.resolve(status()); await settle(); expect(api.sync).not.toHaveBeenCalled(); expect(get('project-sync').disabled).toBe(true)
 })
 it('creates a private project only after explicit confirmation and passes just its name', async () => {
   make(); await settle(); get('cp-name').value = 'my-paper'; await click('create')
@@ -263,7 +263,7 @@ it('auto sync is opt-in, runs on 30s boundaries, and stops after its first failu
   await vi.advanceTimersByTimeAsync(29_999); expect(api.sync).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(1); await settle(); expect(api.sync).toHaveBeenCalledExactlyOnceWith('保存写作进展', true)
   vi.mocked(api.sync).mockRejectedValue(new Error('权限已撤销')); await vi.advanceTimersByTimeAsync(30_000); await settle()
-  expect(get('cp-message').textContent).toContain('同步已停止')
+  expect(get('cp-message').textContent).toContain('同步未完成')
   await vi.advanceTimersByTimeAsync(90_000); await settle(); expect(api.sync).toHaveBeenCalledTimes(2)
   await panel.refresh(); expect(get('cp-auto').textContent).toContain('开启')
 })
@@ -409,6 +409,40 @@ it('redacts credentials and renders failure content as plain readonly text, neve
   make(); await settle(); get('cp-name').value = 'paper'; await click('create')
   expect(get('cp-error-detail').value).toContain('<img onerror=evil> [已隐藏凭据]')
   expect(get('cp-error-detail').innerHTML).toBe('')
+})
+it.each([true, false])('routes a first sync click to required setup without a network mutation, login=%j', async login => {
+  vi.mocked(api.status).mockResolvedValue(status(login ? { signedIn: false, account: null } : { connection: null }))
+  const setup = vi.fn(); make(api, setup); await settle()
+  expect(setup).not.toHaveBeenCalled(); expect(get('project-sync').disabled).toBe(false)
+  expect(get('project-sync').textContent).toBe(login ? '登录并设置同步' : '设置同步')
+  expect(get('cp-sync').disabled).toBe(true); get('project-sync').click(); await settle()
+  expect(setup).toHaveBeenCalledExactlyOnceWith(login)
+  expect(api.sync).not.toHaveBeenCalled(); expect(api.projects).not.toHaveBeenCalled(); expect(documents.save).not.toHaveBeenCalled()
+})
+it('vetoes stale setup clicks after a project change, while refreshing, closing or disposed', async () => {
+  vi.mocked(api.status).mockResolvedValue(status({ connection: null }))
+  const setup = vi.fn(), panel = make(api, setup); await settle()
+  const pending = deferred<CloudWorkspaceStatus>(); vi.mocked(api.status).mockReturnValueOnce(pending.promise)
+  const reading = panel.refresh(); get('project-sync').disabled = false; get('project-sync').click()
+  expect(setup).not.toHaveBeenCalled(); pending.resolve(status({ connection: null })); await reading
+  documents.project = project('other'); get('project-sync').disabled = false; get('project-sync').click()
+  expect(setup).not.toHaveBeenCalled(); panel.projectChanged(); panel.setClosing(true)
+  get('project-sync').disabled = false; get('project-sync').click(); panel.dispose(); get('project-sync').click()
+  expect(setup).not.toHaveBeenCalled(); expect(api.sync).not.toHaveBeenCalled()
+})
+it('keeps a sync failure until an explicit successful sync resolves it, without an automatic retry', async () => {
+  vi.mocked(api.sync).mockRejectedValueOnce(new Error("Error invoking remote method 'cloud:sync': Error: 仓库操作已取消。"))
+  const panel = make(); await settle(); await click('sync')
+  expect(get('cp-error-detail').value).toBe('同步未完成：仓库操作已取消。')
+  expect(get('cp-error').hidden).toBe(false); await panel.refresh()
+  expect(get('cp-error').hidden).toBe(false); expect(api.sync).toHaveBeenCalledOnce()
+  await click('sync'); expect(api.sync).toHaveBeenCalledTimes(2)
+  expect(get('cp-error').hidden).toBe(true); expect(get('cp-error-detail').value).toBe('')
+  expect(get('cp-message').textContent).toBe('同步完成')
+})
+it('does not erase an unrelated creation diagnostic just because a different sync succeeded', async () => {
+  await failCreation(); await click('sync')
+  expect(get('cp-error').hidden).toBe(false); expect(get('cp-error-detail').value).toContain(longFailure)
 })
 it('provides non-ellipsized wrapping, scrollable selectable details and a multiline notice', () => {
   const cloud = readFileSync('src/renderer/cloud-project-style.css', 'utf8')

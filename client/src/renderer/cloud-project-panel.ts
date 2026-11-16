@@ -36,9 +36,9 @@ const TEMPLATE = `
   <label>分享链接（只读，可全选复制）<input id="cp-share-link" readonly></label></div>
   <div class="cp-row"><label>合作者 GitHub 用户名 <input id="cp-login" autocomplete="off"></label>
   <button id="cp-invite" type="button">发送合作邀请</button></div></details>
-  <div class="cp-row"><label>本次写作说明 <input id="cp-summary" placeholder="保存写作进展" maxlength="500"></label>
-  <button id="cp-sync" type="button">同步当前论文</button>
-  <button id="cp-auto" type="button" aria-pressed="false">开启本次会话自动同步</button></div>
+  <div class="cp-row"><button id="cp-sync" type="button">同步当前论文</button>
+  <button id="cp-auto" type="button" aria-pressed="false">开启自动同步</button></div>
+  <details class="cp-group"><summary>写作说明（可选）</summary><label><input id="cp-summary" placeholder="保存写作进展" maxlength="500" aria-label="本次写作说明"></label></details>
   <details class="cp-boundaries"><summary>自动同步与权限</summary><p class="cp-note">仅同步当前论文，每 30 秒检查一次；未保存草稿、冲突、忙碌或退出时跳过。失败后停止，需明确重新开启。链接不授予仓库权限，不提供实时协同编辑。</p></details></section>`
 
 export class CloudProjectPanel {
@@ -52,12 +52,14 @@ export class CloudProjectPanel {
   private state: CloudWorkspaceStatus | null = null
   private stateProject: ProjectInfo | null = null
   private autoSession = false
+  private syncError = false
   private createdUnlinked = new Set<ProjectInfo | null>()
   private timer: ReturnType<typeof setInterval> | null = null
   private cleanups: (() => void)[] = []
 
   constructor(private api: CloudApi | undefined, private documents: Documents, private dialogs: Dialogs,
-    private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void) {
+    private run: RunAction, private adopt: (project: ProjectInfo) => Promise<void>, private notify: (message: string) => void,
+    private setupSync?: (login: boolean) => void) {
     element('cloud-project-workspace').innerHTML = TEMPLATE
     this.bind('refresh', () => this.refresh())
     this.bind('authorization', async () => { await this.api!.openAuthorization() })
@@ -128,7 +130,9 @@ export class CloudProjectPanel {
 
   private bindSync(node: HTMLButtonElement): void {
     this.listen(node, () => {
-      if (!node.disabled && this.canSyncCurrent()) this.dispatch('同步当前论文', () => this.sync(false), true)
+      if (node.disabled) return
+      if (this.canSyncCurrent()) this.dispatch('同步当前论文', () => this.sync(false), true)
+      else if (node.id === 'project-sync' && this.canSetupSync()) this.setupSync?.(!this.state?.signedIn)
     })
   }
 
@@ -136,6 +140,12 @@ export class CloudProjectPanel {
     return !!this.api && !this.busy && !this.closing && !this.disposed && !this.refreshing
       && !!this.documents.project && this.stateProject === this.documents.project
       && !!this.state?.configured && this.state.signedIn && !!this.state.connection
+  }
+
+  private canSetupSync(): boolean {
+    return !!this.setupSync && !!this.api && !this.busy && !this.refreshing && !this.closing && !this.disposed
+      && !!this.documents.project && this.stateProject === this.documents.project && !!this.state?.configured
+      && (!this.state.signedIn || !this.state.connection)
   }
 
   private listen(node: HTMLElement, action: () => void): void {
@@ -170,7 +180,8 @@ export class CloudProjectPanel {
   private value(id: string): string { return element<HTMLInputElement>(`cp-${id}`).value.trim() }
   private message(message: string): void { text('cp-message', message); this.notify(message) }
 
-  private failure(message: string): void {
+  private failure(message: string, sync = false): void {
+    this.syncError = sync
     element<HTMLTextAreaElement>('cp-error-detail').value = message
     text('cp-error-copy-status', '')
     element('cp-error').hidden = false
@@ -180,6 +191,7 @@ export class CloudProjectPanel {
   }
 
   private clearError(): void {
+    this.syncError = false
     element('cp-error').hidden = true
     element<HTMLTextAreaElement>('cp-error-detail').value = ''
     text('cp-error-copy-status', '')
@@ -244,9 +256,9 @@ export class CloudProjectPanel {
     const project = this.documents.project, node = element<HTMLButtonElement>('project-sync')
     const status = element('project-sync-status')
     node.hidden = !project; status.hidden = !project
-    node.disabled = !this.canSyncCurrent()
-    element<HTMLButtonElement>('cp-sync').disabled ||= node.disabled
-    const label = this.canSyncCurrent() ? '同步当前论文' : !this.api ? '同步不可用'
+    node.disabled = !this.canSyncCurrent() && !this.canSetupSync()
+    element<HTMLButtonElement>('cp-sync').disabled ||= !this.canSyncCurrent()
+    const label = this.canSyncCurrent() ? '同步当前论文' : this.canSetupSync() ? this.state?.signedIn ? '设置同步' : '登录并设置同步' : !this.api ? '同步不可用'
       : this.busy ? '同步处理中…' : this.refreshing || !this.state || this.stateProject !== project ? '同步检查中…'
       : !this.state.signedIn ? '同步 · 请登录' : !this.state.connection ? '同步 · 未关联' : '同步暂不可用'
     text('project-sync', label)
@@ -369,19 +381,22 @@ export class CloudProjectPanel {
       if (!this.valid(ticket) || this.stateProject !== ticket.project || !this.state?.configured
         || !this.state.signedIn || !this.state.connection || this.documents.buffer.dirty) return
       if (background && !this.canAuto(true)) return
-      if (!background && !await this.dialogs.confirm('同步当前论文？', `将同步“${ticket.project.name}”的已保存文件并下载云端更新；遇到冲突时不会强制覆盖。`)) return
       if (!this.valid(ticket) || this.documents.buffer.dirty) return
       const result = await this.api!.sync(this.value('summary') || '保存写作进展', background)
       if (!this.valid(ticket)) return
       await this.documents.refresh([''])
       if (!this.valid(ticket, false)) return
       await this.refresh()
-      if (this.valid(ticket, false)) this.message(result.message)
+      if (this.valid(ticket, false)) {
+        if (this.syncError) this.clearError()
+        this.message(result.message)
+      }
     } catch (error) {
       this.autoSession = false
       if (this.valid(ticket, false)) {
         await this.refresh()
-        if (this.valid(ticket, false)) this.failure(`同步已停止：${readableError(error)}。请先核对远端状态，不要盲目重复操作。`)
+        const message = readableError(error).replace(/^Error invoking remote method 'cloud:sync': Error: /, '')
+        if (this.valid(ticket, false)) this.failure(`同步未完成：${message}`, true)
       }
     }
   }

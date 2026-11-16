@@ -156,7 +156,8 @@ export class CollaborationTransport {
       active(parent)
       if (timedOut) throw new CollaborationError('timeout')
       const diagnostic = readOperationDiagnostic(error)
-      if (diagnostic) throw new CollaborationError(diagnostic)
+      if (diagnostic === 'unauthorized' || diagnostic === 'forbidden' || diagnostic === 'create-forbidden'
+        || diagnostic === 'invalid-repository' || diagnostic === 'network' || diagnostic === 'response') throw new CollaborationError(diagnostic)
       throw error instanceof CollaborationError ? error : new CollaborationError('network')
     } finally { clearTimeout(timer); parent.removeEventListener('abort', cancel) }
   }

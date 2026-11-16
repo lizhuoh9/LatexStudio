@@ -10,20 +10,38 @@ export interface GitHubIdentity { login: string; id: number; branch: string }
 export type GitHubHttpClient = HttpClient & { close(): Promise<void> }
 const apiMaximumBytes = 1024 * 1024
 
+/** Consume network EOF before handing bytes to isomorphic-git: pkt-line parsers may stop
+ * at a protocol flush without returning the HTTP iterator. Retained chunks across this
+ * client remain bounded by its cumulative downloadBytes budget (default 128MiB).
+ * No concatenation or extra whole-response copy is made; abandoned arrays are GC-owned. */
+async function bufferedGitBody(body: AsyncIterable<Uint8Array>, check: () => void): Promise<AsyncIterableIterator<Uint8Array>> {
+  const chunks: Uint8Array[] = []
+  try { for await (const chunk of body) { check(); chunks.push(chunk) } }
+  catch (error) { chunks.length = 0; throw error }
+  return (async function* () {
+    try { for (const chunk of chunks) { check(); yield chunk } }
+    finally { chunks.length = 0 }
+  })()
+}
+
 /** The budget belongs to this client, not an entire repository/UI workflow. */
 export function githubHttp(target: GitHubTarget, token: string, options: TransferOptions = {}): GitHubHttpClient {
   const canonical = checkedTarget(target)
   checkedToken(token)
   const transfer = new GitHubTransfer(options)
-  const readOnly = options.readOnly === true
+  const readOnly = options.readOnly === true, parent = options.signal
+  let closed = false
   return {
-    close: () => transfer.close(),
+    close: () => { closed = true; return transfer.close() },
     request: async (request: GitRequest) => {
       const endpoint = checkedGitRequest(canonical, request, readOnly)
       const headers = gitHeaders(token, request.headers)
       const response = await transfer.open(endpoint.url.href, { method: endpoint.method, headers, signal: request.signal }, request.body)
+      const body = await bufferedGitBody(response.body, () => {
+        if (closed || parent?.aborted || request.signal?.aborted) throw new GitHubError('GitHub 网络传输已取消。')
+      })
       return { url: endpoint.url.href, method: endpoint.method, statusCode: response.statusCode,
-        statusMessage: 'OK', headers: response.headers, body: response.body }
+        statusMessage: 'OK', headers: response.headers, body }
     },
   }
 }

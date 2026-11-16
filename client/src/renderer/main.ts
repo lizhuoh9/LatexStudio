@@ -99,7 +99,7 @@ class Workbench {
     })
     const cloudApi = (window as Window & { paperstudioCloud?: CloudApi }).paperstudioCloud
     this.cloud = new CloudProjectPanel(cloudApi, this.documents, this.dialogs, this.run,
-      project => this.adopt(project), message => this.notify(message))
+      project => this.adopt(project), message => this.notify(message), login => this.setupSync(login))
     const unsubscribeCloud = collaborationApi?.onState(() => { void this.cloud.refresh() })
     const projectApi = (window as Window & { paperstudioProjects?: ProjectLibraryApi }).paperstudioProjects
     this.library = new ProjectLibraryPanel(projectApi, this.documents, this.dialogs, this.run,
@@ -173,6 +173,14 @@ class Workbench {
       element<HTMLButtonElement>('file-reload').disabled = !this.reloadAvailable()
     }
     element<HTMLButtonElement>('cancel-compile').disabled = this.closing || !this.compiling
+  }
+
+  private setupSync(login: boolean): void {
+    if (this.busy || this.closing || !this.documents.project || document.querySelector('dialog[open]')) return
+    if (login) {
+      element<HTMLDialogElement>('cloud-dialog').showModal()
+      this.collaboration.startLogin()
+    } else element('project-settings').click()
   }
 
   private bindActions(): void {

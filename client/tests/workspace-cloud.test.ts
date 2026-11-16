@@ -165,15 +165,27 @@ describe('ordinary private GitHub workspace orchestration', () => {
     expect(f.account.inviteCollaborator).toHaveBeenCalledWith(1, 'bob', {}, { owner: 'alice', name: 'paper' })
   })
 
-  it('requires saved drafts and native consent for manual sync', async () => {
+  it('uses the explicit Sync action without a second popup and still requires saved drafts', async () => {
     const f = fixture(); st.binding.mockResolvedValue(binding); f.dirty(true)
     await expect(f.cloud.sync('progress', false)).rejects.toThrow('先保存')
-    f.dirty(false); f.host.confirm.mockResolvedValueOnce(false)
-    await expect(f.cloud.sync('progress', false)).rejects.toThrow('取消同步')
     expect(f.repo.sync).not.toHaveBeenCalled()
-    f.host.confirm.mockImplementationOnce(async () => { f.edit(); return true })
-    await expect(f.cloud.sync('progress', false)).rejects.toThrow('状态变化')
+    f.dirty(false)
+    await expect(f.cloud.sync('progress', false)).resolves.toMatchObject({ uploaded: true })
+    expect(f.host.confirm).not.toHaveBeenCalled()
+    expect(f.repo.sync).toHaveBeenCalledOnce()
+  })
+
+  it.each(['edit', 'project', 'session'] as const)('rechecks %s after async sync preparation without sending files', async kind => {
+    const f = fixture()
+    st.binding.mockImplementationOnce(async () => {
+      if (kind === 'edit') f.edit()
+      else if (kind === 'project') f.root('/fixture/other')
+      else f.invalidate()
+      return binding
+    })
+    await expect(f.cloud.sync('progress', false)).rejects.toThrow(kind === 'session' ? '登录会话已变化' : '状态变化')
     expect(f.repo.sync).not.toHaveBeenCalled()
+    expect(f.host.confirm).not.toHaveBeenCalled()
   })
 
   it('requires explicit session consent for background sync and stops after the first error', async () => {

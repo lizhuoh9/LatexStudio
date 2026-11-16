@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises'
 import git, { type HttpClient } from 'isomorphic-git'
 import type { GitHubConnection, GitHubSettings, HistoryEntry, RepositoryStatus, SyncResult } from '../../shared/workspace-contracts'
 import { CredentialVault } from './credentials'
+import { rememberOperationDiagnostic, readOperationDiagnostic } from './operation-diagnostic'
 import { assertProjectDirectory, checkCheckout, headOid, validateTree, workingFiles } from './files'
 import { ensureRepository, localChanges, localHistory, saveSnapshot } from './local-history'
 import { emptyMetadata, readMetadata, writeMetadata, type RepositoryMetadata } from './metadata'
@@ -245,8 +246,14 @@ export class GitHubRepository {
   private async synchronize(metadata: RepositoryMetadata, http: HttpClient, scope: RepositoryOperationScope): Promise<SyncResult> {
     const connection = metadata.connection!
     scope.check()
-    const fetched = await scope.mutate(() => git.fetch({ fs, dir: this.root, http, url: connection.url, remote: 'origin',
-      ref: `refs/heads/${connection.branch}`, singleBranch: true, tags: false }))
+    const fetched = await scope.mutate(async () => {
+      try { return await git.fetch({ fs, dir: this.root, http, url: connection.url, remote: 'origin',
+        ref: `refs/heads/${connection.branch}`, singleBranch: true, tags: false }) }
+      catch (error) {
+        if (error !== null && typeof error === 'object' && !readOperationDiagnostic(error)) rememberOperationDiagnostic(error, 'git-fetch')
+        throw error
+      }
+    })
     const remote = fetched.fetchHead
     const local = await scope.step(() => headOid(this.root))
     if (remote) await scope.step(() => validateTree(this.root, remote))

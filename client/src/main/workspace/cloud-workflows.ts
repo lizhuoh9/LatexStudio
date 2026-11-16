@@ -158,17 +158,15 @@ export class WorkspaceCloud implements CloudApi {
 
   async sync(summary: string, background: boolean): Promise<SyncResult> {
     if (typeof background !== 'boolean') throw new Error('同步模式无效。')
+    const root = this.requireRoot(), epoch = this.host.epoch(), verifySession = this.account.captureSessionGuard()
     this.host.requireSaved()
     const status = await this.status()
     if (!status.connection || !status.signedIn) throw new Error('请先登录并关联私有合作项目。')
     if (background && !status.autoSync) throw new Error('尚未明确启用本次会话的自动同步。')
-    const epoch = this.host.epoch()
-    if (!background && !await this.host.confirm('保存并与 GitHub 私有项目同步？',
-      `${status.connection.owner}/${status.connection.name}：将提交已保存文件并收发共享版本；不会强推或覆盖未保存草稿。`)) {
-      throw new Error('已取消同步。')
-    }
+    // The trusted explicit Sync action is consent. Revalidate after async status instead of asking twice.
     this.host.requireSaved()
-    if (epoch !== this.host.epoch()) throw new Error('确认期间编辑状态变化，请重新保存并同步。')
+    if (root !== this.host.root() || epoch !== this.host.epoch()) throw new Error('同步准备期间编辑状态变化，未开始同步。')
+    verifySession()
     try {
       const result = await this.host.transfer('sync', signal =>
         this.host.repository().sync(requireText(summary, '进展说明', 500), { signal }))
