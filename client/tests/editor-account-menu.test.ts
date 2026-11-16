@@ -19,6 +19,10 @@ const fixture = vi.hoisted(() => {
 vi.mock('../src/renderer/dom', () => ({ element: fixture.get,
   text: (id: string, value: string) => { fixture.get(id).textContent = value },
   button: (id: string, handler: () => void) => fixture.actions.set(id, handler) }))
+vi.mock('../src/renderer/account-avatar', () => ({ AccountAvatar: class {
+  update(id: number | null) { fixture.get('account-avatar').attributes.set('fixture-account-id', String(id)) }
+  setClosing() {} dispose() {}
+} }))
 import { CollaborationModel } from '../src/renderer/collaboration-model'
 import { AccountMenu } from '../src/renderer/account-menu'
 const state = (extra: Partial<CollaborationState> = {}): CollaborationState => ({ phase: 'signed-out', message: '',
@@ -40,12 +44,14 @@ describe('top-right account identity and settings', () => {
   })
   it('shows authenticated identity initials and accessible account name, reverting on logout', () => {
     model.receive(state({ phase: 'signed-in', account: { id: 7, login: 'fixture-user', name: '李卓' }, expiresAt: 100000 }))
-    menu.update(); expect(fixture.get('account-avatar').textContent).toBe('李')
+    menu.update(); expect(fixture.get('account-initial').textContent).toBe('李')
+    expect(fixture.get('account-avatar').attributes.get('fixture-account-id')).toBe('7')
     expect(fixture.get('account-label').textContent).toBe('fixture-user')
     expect(fixture.get('account-toggle').attributes.get('aria-label')).toContain('已登录 李卓')
     expect(fixture.get('account-menu').classes.has('is-signed-in')).toBe(true)
     model.receive(state()); menu.update()
-    expect(fixture.get('account-avatar').textContent).toBe(''); expect(fixture.get('account-avatar').classes.has('is-guest')).toBe(true)
+    expect(fixture.get('account-initial').textContent).toBe(''); expect(fixture.get('account-avatar').classes.has('is-guest')).toBe(true)
+    expect(fixture.get('account-avatar').attributes.get('fixture-account-id')).toBe('null')
   })
   it('does not treat an expired or invalid account as signed in', () => {
     model.receive(state({ phase: 'signed-in', account: { id: 7, login: 'fixture-user', name: null }, expiresAt: 500 }))
@@ -65,10 +71,10 @@ describe('top-right account identity and settings', () => {
     fixture.get('account-menu').handlers.get('keydown')!(event)
     expect(event.defaultPrevented).toBe(true); expect(fixture.get('account-toggle').focus).toHaveBeenCalledOnce()
   })
-  it('uses text identity rather than remote image URLs or HTML and removes listeners on disposal', () => {
+  it('keeps account names as text rather than interpolating untrusted HTML into the avatar', () => {
     model.receive(state({ phase: 'signed-in', account: { id: 7, login: 'fixture-user', name: '<img onerror=evil>' }, expiresAt: 100000 }))
     menu.update(); expect(fixture.get('account-name').textContent).toBe('<img onerror=evil>')
-    expect(fixture.get('account-avatar').textContent).toBe('<')
+    expect(fixture.get('account-initial').textContent).toBe('<')
     menu.dispose(); expect(fixture.documentHandlers.size).toBe(0)
   })
 })

@@ -75,6 +75,9 @@ describe('user-selected Overleaf home/editor layout retains real application con
     for (const id of ['revision-restore', 'cancel-compile', 'setup-prepare', 'setup-cancel', 'collaboration-login', 'collaboration-cancel', 'collaboration-verify', 'repository-transfer-cancel']) expect(tag(id), id).toContain('disabled')
     expect(tag('confirm-dialog')).toContain('aria-labelledby="confirm-title"'); expect(html).toContain('<form method="dialog">')
     expect(html).toContain("connect-src 'none'"); expect(html).toContain("frame-src 'none'")
+    expect(html).toContain("img-src 'self' data: blob: https://avatars.githubusercontent.com;")
+    expect(html).not.toContain('img-src https:'); expect(html).not.toContain('img-src *')
+    expect(tag('account-initial')).toContain('<span')
     expect(base).toContain('[hidden] { display: none !important; }')
   })
   it('retains accessible announcements, keyboard-readable differences and native focus handling', () => {

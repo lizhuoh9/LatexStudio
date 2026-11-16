@@ -1,10 +1,12 @@
 import type { CollaborationModel } from './collaboration-model'
 import { button, element, text } from './dom'
+import { AccountAvatar } from './account-avatar'
 
 /** Account identity only: opening this menu never authorizes or discovers projects. */
 export class AccountMenu {
   private disposed = false
   private closing = false
+  private avatar: AccountAvatar
   private outside = (event: Event): void => {
     if (!element('account-menu').contains(event.target as Node | null)) this.close()
   }
@@ -15,6 +17,7 @@ export class AccountMenu {
   private toggle = (event: Event): void => { if (this.disposed || this.closing) event.preventDefault() }
 
   constructor(private model: CollaborationModel, private openSettings: () => void) {
+    this.avatar = new AccountAvatar(element('account-avatar'))
     button('account-settings', () => {
       if (this.disposed || this.closing) return
       this.close(); this.openSettings()
@@ -31,7 +34,8 @@ export class AccountMenu {
     const account = this.model.account, name = account?.name?.trim() || account?.login || '离线使用'
     text('account-label', account?.login || '未登录')
     text('account-name', name)
-    text('account-avatar', account ? (Array.from(name)[0] || '?').toLocaleUpperCase() : '')
+    text('account-initial', account ? (Array.from(name)[0] || '?').toLocaleUpperCase() : '')
+    this.avatar.update(account?.id ?? null)
     element('account-avatar').classList.toggle('is-guest', !account)
     element('account-menu').classList.toggle('is-signed-in', Boolean(account))
     const identity = account ? `已登录 ${name}（${account.login}）` : '未登录 · 账号与设置'
@@ -40,7 +44,8 @@ export class AccountMenu {
   }
 
   setClosing(closing: boolean): void {
-    this.closing = closing
+    this.closing = closing; this.avatar.setClosing(closing)
+    if (!closing) this.update()
     element('account-toggle').setAttribute('aria-disabled', String(closing))
     if (closing) this.close()
   }
@@ -49,7 +54,7 @@ export class AccountMenu {
 
   dispose(): void {
     if (this.disposed) return
-    this.disposed = true; this.close()
+    this.disposed = true; this.close(); this.avatar.dispose()
     element('account-toggle').removeEventListener('click', this.toggle)
     element('account-menu').removeEventListener('keydown', this.keyboard)
     document.removeEventListener('pointerdown', this.outside)
