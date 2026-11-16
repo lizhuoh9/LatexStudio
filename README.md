@@ -15,9 +15,9 @@ The display name is LatexStudio. The historical package/application identifiers 
 
 ## Workbench
 
-An independent project homepage opens a single-paper editor: files and chapter outline on the left, source in the middle, PDF/compile on the right, optional modification timeline further right. Sync is scoped to the current paper. Logs can be opened/closed without covering the file outline.
+An independent project homepage opens a single-paper editor: files and chapter outline on the left, source in the middle, PDF/compile on the right, an independent read-only History mode with recorded files, central colored source comparison and a right-side timeline. Sync is scoped to the current paper. Logs can be opened/closed without covering the file outline.
 
-Local editing requires no account. GitHub login opens the official device-authorization page; the short code is still required. Valid current access tokens may be OS-encrypted locally and revalidated on restart, never included in this repository. Expired/revoked sessions require login again. Paper repositories, documents and credentials are separate from this software repository.
+Local editing requires no account. GitHub login opens the official device-authorization page; the short code is still required. Version 0.3.8 automatically rotates device-flow access/refresh credentials in Main, stores them only under OS encryption, and revalidates identity before restored authority. Short access-token expiry no longer requires repeated manual login; temporary offline startup retries automatically. Logout removes local login. Revoked/expired refresh authorization or unavailable secure storage remain exceptions. Upgrading an old access-only record requires one explicit login to obtain a renewable pair. No App secret, credentials in Renderer/source, or globally disabled GitHub expiry. Paper repositories, documents and credentials are separate from this software repository.
 
 ## Build from source
 

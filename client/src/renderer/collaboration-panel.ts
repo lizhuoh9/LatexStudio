@@ -82,11 +82,12 @@ export class CollaborationPanel {
   private render(): void {
     text('collaboration-state', this.accountStatus())
     const phase = this.model.state?.phase
-    const detail = phase === 'error' || phase === 'authorizing' ? collaborationDetail(this.model.state?.message ?? '') : ''
+    const detail = phase === 'error' || phase === 'authorizing' || this.recovering() ? collaborationDetail(this.model.state?.message ?? '') : ''
     text('collaboration-detail', detail)
     element('collaboration-detail').hidden = !detail
     const expires = this.model.account ? this.model.state?.expiresAt : null
-    text('collaboration-session-expiry', expires ? `到期 ${new Date(expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '')
+    text('collaboration-session-expiry', expires ? this.model.state?.renewable === true ? this.model.state.sessionOnly ? '本次运行自动保持登录' : '自动保持登录' :
+      `到期 ${new Date(expires).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '')
     element('collaboration-session-expiry').hidden = !expires
     element('collaboration-project-area').hidden = !this.model.account
     text('collaboration-error', this.model.error)
@@ -106,8 +107,11 @@ export class CollaborationPanel {
     if (account) return account.name && account.name !== account.login ? `${account.name} · ${account.login}` : account.login
     if (this.model.allowed('cancel') && !this.model.prompt) return '正在登录…'
     if (state.phase === 'authorizing') return '等待 GitHub 授权…'
+    if (this.recovering()) return '等待恢复 GitHub 连接…'
     return state.phase === 'error' ? '暂时无法登录' : '未登录'
   }
+
+  private recovering(): boolean { return this.model.state?.renewable === true && !this.model.account && this.model.state.phase === 'signed-out' }
 
   private controls(): void {
     const actions: CollaborationAction[] = ['status', 'login', 'cancel', 'logout', 'verify', 'projects']
@@ -117,10 +121,10 @@ export class CollaborationPanel {
     const account = Boolean(this.model.account), authorizing = this.model.allowed('cancel') || Boolean(this.model.prompt)
     element('collaboration-login').hidden = account || authorizing || !this.model.allowed('login')
     element('collaboration-cancel').hidden = !authorizing
-    element('collaboration-logout').hidden = !account
+    element('collaboration-logout').hidden = !account && !this.recovering()
     element('collaboration-projects').hidden = !account
     element('collaboration-status').hidden = !this.model.available || !this.model.error
-      && this.model.state?.phase !== 'error' && this.model.state?.phase !== 'unconfigured'
+      && this.model.state?.phase !== 'error' && this.model.state?.phase !== 'unconfigured' && !this.recovering()
     element('collaboration-verify').hidden = !this.model.prompt
   }
 

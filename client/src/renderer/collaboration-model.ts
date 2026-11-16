@@ -67,9 +67,10 @@ export class CollaborationModel {
     if (!this.available || this.closing || this.hasCurrent(action)) return false
     if (action === 'status') return true
     const changing = this.hasCurrent('login') || this.hasCurrent('cancel') || this.hasCurrent('logout')
-    if (action === 'login') return this.configured && !changing && !this.account && (this.state?.phase !== 'authorizing' || this.expired)
+    const recovering = this.state?.renewable === true && !this.account && this.state.phase === 'signed-out'
+    if (action === 'login') return this.configured && !changing && !this.account && !recovering && (this.state?.phase !== 'authorizing' || this.expired)
     if (action === 'cancel') return !this.hasCurrent('logout') && (this.hasCurrent('login') || this.state?.phase === 'authorizing')
-    if (action === 'logout') return !this.hasCurrent('cancel') && this.state?.phase === 'signed-in'
+    if (action === 'logout') return !this.hasCurrent('cancel') && (this.state?.phase === 'signed-in' || recovering)
     if (action === 'verify') return Boolean(this.prompt) && !this.hasCurrent('cancel') && !this.hasCurrent('logout')
     return Boolean(this.account) && !changing
   }

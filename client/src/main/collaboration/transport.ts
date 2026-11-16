@@ -66,6 +66,12 @@ export class CollaborationTransport {
     return this.post('https://github.com/login/oauth/access_token', { client_id: clientId, device_code: deviceCode,
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }, signal)
   }
+  /** Rotation is non-idempotent: own the actual POST and response cleanup through cancellation. */
+  refresh(clientId: string, refreshToken: string, signal: AbortSignal): Promise<unknown> {
+    return this.request('https://github.com/login/oauth/access_token', { method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, grant_type: 'refresh_token', refresh_token: refreshToken }).toString() }, signal, [200])
+  }
   profile(token: string, signal: AbortSignal): Promise<unknown> {
     return this.get('/user', token, signal)
   }

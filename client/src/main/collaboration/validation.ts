@@ -57,7 +57,20 @@ export function deviceSession(value: unknown, now: number): DeviceSession {
     prompt: { userCode: data.user_code, verificationUri: 'https://github.com/login/device', expiresAt: now + expires * 1000 } }
 }
 
-export interface SessionToken { token: string; expiresAt: number; monotonicExpiresAt: number; conservative: boolean }
+export interface SessionToken {
+  token: string; expiresAt: number; monotonicExpiresAt: number; conservative: boolean
+  refreshToken?: string; refreshExpiresAt?: number; refreshMonotonicExpiresAt?: number
+}
+const REFRESH_SECONDS = 186 * 24 * 3600
+function refreshCredential(data: Record<string, unknown>, now: number, accessSeconds: number): Partial<SessionToken> {
+  // Legacy/partial responses remain access-only; never invent a durable authorization.
+  if (data.refresh_token === undefined || data.refresh_token_expires_in === undefined) return {}
+  if (typeof data.refresh_token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(data.refresh_token)) throw new CollaborationError('response')
+  const seconds = integer(data.refresh_token_expires_in, REFRESH_SECONDS)
+  if (seconds <= accessSeconds) throw new CollaborationError('response')
+  return { refreshToken: data.refresh_token, refreshExpiresAt: now + seconds * 1000,
+    refreshMonotonicExpiresAt: performance.now() + seconds * 1000 }
+}
 export function sessionToken(value: unknown, now: number): SessionToken {
   const data = record(value)
   if (typeof data.access_token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(data.access_token) ||
@@ -65,7 +78,8 @@ export function sessionToken(value: unknown, now: number): SessionToken {
     (data.scope !== undefined && data.scope !== '')) throw new CollaborationError('response')
   const expires = data.expires_in === undefined ? 3600 : Math.min(integer(data.expires_in), 8 * 3600)
   return { token: data.access_token, expiresAt: now + expires * 1000,
-    monotonicExpiresAt: performance.now() + expires * 1000, conservative: data.expires_in === undefined }
+    monotonicExpiresAt: performance.now() + expires * 1000, conservative: data.expires_in === undefined,
+    ...refreshCredential(data, now, expires) }
 }
 export function account(value: unknown): CloudAccount {
   const data = record(value)

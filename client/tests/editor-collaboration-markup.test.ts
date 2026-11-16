@@ -24,7 +24,7 @@ describe('ordinary collaboration account UI stays separate from project authorit
     expect(ordinary.slice(detail, ordinary.indexOf('>', detail))).not.toContain(' open')
     const accountDetails = ordinary.slice(detail, ordinary.indexOf('</details>', detail))
     expect(accountDetails).toContain('操作系统加密保存'); expect(accountDetails).toContain('系统安全存储不可用时仅本次运行有效')
-    expect(accountDetails).toContain('授权到期后需重新登录')
+    expect(accountDetails).toContain('自动续期'); expect(accountDetails).toContain('续期授权失效后需重新登录')
     expect(accountDetails).toContain('退出账号会移除本机保存的登录，不撤销 GitHub 授权'); expect(accountDetails).toContain('仓库访问范围在项目授权中管理')
     expect(ordinary).toContain('id="collaboration-error" class="collaboration-error" role="alert" hidden')
     expect(panel).toContain("state.phase === 'unconfigured'")

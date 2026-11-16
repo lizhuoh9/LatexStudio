@@ -101,7 +101,7 @@ export class EncryptedSessionStore implements AccountSessionStore {
       } catch { throw fail() }
       signal?.throwIfAborted()
       if (credential.id !== saved.value.id) throw fail()
-      if (credential.expiresAt <= now || credential.clientId !== clientId) { await this.remove(credential.id); return null }
+      if ((credential.refreshExpiresAt ?? credential.expiresAt) <= now || credential.clientId !== clientId) { await this.remove(credential.id); return null }
       return credential
     })
   }

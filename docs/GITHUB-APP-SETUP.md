@@ -2,9 +2,9 @@
 
 ## 状态与边界
 
-截至 2026-11-14：GitHub 是唯一产品协作路线；本地离线编辑、历史与已准备好的 Windows TeX 编译不要求 GitHub 账号。普通登录／私有建库／邀请／接受／下载／安全同步已在源码中接线；发布者已提供公共 Client ID 与 `latexfactory` App 标识并接入本地构建，**尚未用真实账号完成登录与项目权限验收**。配置公开标识、显示可登录，不等于服务已经实测，更不等于签名或安装验收通过。
+截至 2026-11-16：GitHub 是唯一产品协作路线；本地离线编辑、历史与已准备好的 Windows TeX 编译不要求 GitHub 账号。Windows 实际 App 登录、私有建库、指定项目关联、首次上传、独立第二目录下载、两副本交替同步和取消恢复已完成真实账号验证；不冒充第二个人邀请接受或 Mac GUI 验收。0.3.8 增加官方设备流程的自动续期，覆盖模拟跨过访问期限、加密恢复、退出与断网重试；尚未等待真实账号跨过八小时来证明现场续期。
 
-现有 Windows 0.2.0 安装包早于当前协作修改且未签名；不能用旧包证明本流程。只有本机、没有可信代码签名资源，Mac 仍未验收；正式发布继续受[发布验收门禁](<RELEASE-ACCEPTANCE.md>)约束。NAS 是已取消的产品路线，不是此流程的替代后端或待完成验收项。
+当前 0.3.x Windows 与 Apple Silicon Mac 编辑测试版由 GitHub 构建并发布，但仍未签名、未完成原始安装升级及真实 Mac GUI 验收；正式发布继续受[发布验收门禁](<RELEASE-ACCEPTANCE.md>)约束。NAS 是已取消的产品路线，不是此流程的替代后端或待完成验收项。
 
 本说明面向**发布者／维护者**。普通用户只需安装最终软件，点击登录，按 GitHub 官方设备授权页面确认自己的账号；不需要 Git、命令行、PAT、注册自己的 App、自己构建或设置环境变量。普通操作不得静默退回旧开发用 URL／PAT 流程。
 
@@ -17,9 +17,9 @@
 3. 不需要接收 webhook 的当前纯客户端方案可关闭 Webhooks 的 **Active**；不要为凑配置部署假服务或收集 webhook secret。
 4. 如需实验室其他 GitHub 账号／组织安装，选择 **Any account**，而不是 Only on this account。这里的“public GitHub App”指允许其他账户安装，**不代表论文仓库公开**，也不要求上架 Marketplace。
 5. 申请下表所需最少权限并保存。改变 App 权限后，既有安装可能需要所有者批准更新；不能把注册页面勾选成功当成所有用户已授权。
-6. 可保留 GitHub 默认的 user token 到期策略。当前客户端仅用操作系统加密保存有原始期限的 access token，不保存 refresh token、也不自动续期；不需要为它关闭到期，也不需生成／分发 private key 或 client secret。
+6. 保留 GitHub 默认的 user token 到期策略。0.3.8 用操作系统加密保存有界的 access／refresh 凭据，在主进程按官方设备流程自动轮换，再重新验证当前身份；不关闭到期、不生成／分发 private key 或 client secret。官方[续期说明](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens)明确：若用户令牌由 device flow 生成，续期不要求 `client_secret`；不要套用 Web 回调流程的 secret 要求。
 
-官方[Device Flow 说明](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app#using-the-device-flow-to-generate-a-user-access-token)：先用公共 `client_id` 请求 device code，再由用户在 `https://github.com/login/device` 输入本次 user code，客户端按服务器 interval 轮询 access token；不传 client secret。App 权限在 App 注册／安装环节申请，不用 OAuth App 的 `repo` scope 或 PAT 替代；该文档明确 GitHub App 不支持传统任意 OAuth scope（其单独提到的 `offline_access` 也不是当前产品自动续期承诺）。验证码、device code、access／refresh token 都不是公开 ID，不得贴进文档、截图、日志或仓库。
+官方[Device Flow 说明](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app#using-the-device-flow-to-generate-a-user-access-token)：先用公共 `client_id` 请求 device code，再由用户在 `https://github.com/login/device` 输入本次 user code，客户端按服务器 interval 轮询 access token；不传 client secret。App 权限在 App 注册／安装环节申请，不用 OAuth App 的 `repo` scope 或 PAT 替代；该文档明确 GitHub App 不支持传统任意 OAuth scope（本客户端使用设备流程返回的有界续期凭据，不额外索要传统 `repo` scope）。验证码、device code、access／refresh token 都不是公开 ID，不得贴进文档、截图、日志或仓库。
 
 ## 2. 权限清单及官方 API 依据
 
@@ -80,7 +80,7 @@ npm run typecheck && npm test && npm run build
 
 变量必须在**构建 Main bundle 之前**设定；安装后在用户电脑改环境不会为已经打包的客户端补配置。此处命令只生成构建产物，不进行账号操作或签名。以后有明确打包授权时，保持这两个公开变量再运行既有 `npm run dist:win`；它内部重建 Main。目前 Windows 打包配置禁用签名执行，这条命令仍只会产生开发包，不会凭空得到可信签名。保留现有产物，另行安排签名／新版原样安装验收与哈希审计，不把旧包覆盖后当作旧证据继续使用。
 
-**不准嵌入或收集**：client secret、GitHub App private key、PAT、device code、user access token、refresh token。无需这些秘密即可把公共 Client ID 配进该 Device Flow 客户端；如果未来设计要用它们，必须另做安全架构评审，不能新增环境变量后直接塞进 Electron。
+**不准作为发布配置嵌入、收集或上传**：client secret、GitHub App private key、PAT、device code、user access token、refresh token。构建只需公共 Client ID。运行时由官方设备授权取得的 access／refresh 凭据仅在本机 Main 使用并按下节 OS 加密保存；不要求用户发给发布者，也不经环境变量、Renderer、日志、URL 或源码传递。
 
 ## 4. 用户安装、selected repositories 与新库恢复
 
@@ -107,7 +107,7 @@ npm run typecheck && npm test && npm run build
 
 ## 6. 会话与正式验收清单
 
-可使用的 App token 仅在 Main 持有，IPC 不回传；按用户新增的重启保留需求，只允许在独立 App-session 文件中保存操作系统加密的当前 access token 和原始期限，旧 PAT Vault 不参与。安全存储不可用／basic_text／加密被拒绝时不落盘；不保存 refresh token、不自动续期。重启仅在有效期内重新 GET /user 验证后恢复登录，不自动打开浏览器或操作项目。默认期限最多八小时，服务器不报期限时保守一小时；过期／撤销或退出账号会移除保存记录，普通应用退出则保留有效记录。退出仍只清本地会话，**不撤销 GitHub 已授予的 App 权限／安装，不影响其他设备，也不删除私库或论文**；要全局撤销须在 GitHub 官方设置操作。
+访问与续期凭据仅在 Main 持有，IPC 不回传；0.3.8 按用户的持久登录请求，在独立 App-session 文件中以操作系统加密保存同一有界授权的 access／refresh 配对，旧 PAT Vault 不参与。安全存储不可用／basic_text／加密被拒绝时不以明文落盘，只能本次运行有效。主进程在短期 access 到期前自动轮换，并先保存新配对、再重新 GET /user 验证身份；旋转前等待已有仓库授权请求退出，不沿用过期访问权限。暂时网络失败保留加密授权，有限间隔自动恢复，不开启浏览器或自动操作项目。新配对的 refresh 期限仍由 GitHub 限定（默认约六个月，安全校验最多186天），并非永不过期；到期、撤销或主动退出须重新授权。正常关闭等已派发的轮换收束再退出；Logout 则取消、收束并清除迟到凭据，不能被后台结果复活。旧记录无 refresh，升级后需显式登录一次。退出仍只清本机登录，**不撤销 GitHub 已授予的 App 权限／安装，不影响其他设备，也不删除私库或论文**；要全局撤销须在 GitHub 官方设置操作。
 
 以后获得发布者真实 App 与测试账号的明确授权，至少验收以下项目；本次文档工作未执行这些账号操作：
 

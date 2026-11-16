@@ -50,6 +50,25 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 }
 
 describe('initialization performs status only, never authorization or project discovery', () => {
+  it('offers retry and explicit logout while restoring an offline renewable login, not another login or project authority', async () => {
+    const pending = state({ renewable: true, sessionOnly: false, message: '联网后将自动重试' })
+    vi.mocked(api.status).mockResolvedValue(pending)
+    const panel = create(); await settle()
+    expect(panel.model.account).toBeNull(); expect(dom.get('collaboration-login').hidden).toBe(true)
+    expect(dom.get('collaboration-status').hidden).toBe(false); expect(dom.get('collaboration-logout').hidden).toBe(false)
+    expect(dom.get('collaboration-logout').disabled).toBe(false)
+    expect(dom.get('collaboration-detail').textContent).toContain('自动重试')
+    expect(api.startLogin).not.toHaveBeenCalled(); expect(api.projects).not.toHaveBeenCalled()
+    await click('logout'); expect(api.logout).toHaveBeenCalledOnce()
+    receive({ ...signedIn(), renewable: true, sessionOnly: false })
+    expect(panel.model.account).toBeNull() // A late automatic result cannot undo explicit logout.
+  })
+  it('shows automatic login retention for a renewable Main session instead of the short access-token expiry', async () => {
+    create(); await settle()
+    receive({ ...signedIn(), renewable: true, sessionOnly: false, expiresAt: now + 100 * 24 * 3600000 })
+    expect(dom.get('collaboration-session-expiry').textContent).toBe('自动保持登录')
+    expect(api.startLogin).not.toHaveBeenCalled(); expect(api.projects).not.toHaveBeenCalled()
+  })
   it('handles a missing optional API without an unhandled request', async () => {
     const panel = new CollaborationPanel(undefined, () => now); panels.push(panel); panel.initialize()
     await click('login'); await click('verify'); await click('projects')

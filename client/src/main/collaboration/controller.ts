@@ -91,7 +91,7 @@ export class CollaborationController {
   }
 
   blockNewActions(): void { this.closing = true; this.loginRequested = false }
-  resumeActions(): void { this.closing = false }
+  resumeActions(): void { this.closing = false; this.service.resumeActions() }
   async cancelAndWait(): Promise<CollaborationState> {
     this.loginRequested = false
     try { return publicState(await this.service.cancelAndWait()) }

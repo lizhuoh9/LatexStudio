@@ -18,8 +18,10 @@ export interface CollaborationState {
   account: CloudAccount | null
   authorization: DevicePrompt | null
   expiresAt: number | null
-  /** False only when the current access token was safely encrypted for valid-session restoration. */
+  /** False only when bounded login credentials were safely OS-encrypted for restoration. */
   sessionOnly: boolean
+  /** Nonsecret UI metadata; repository authority still requires fresh Main validation. */
+  renewable?: boolean
 }
 
 /** Metadata only: no credential, arbitrary clone URL, local path or write capability. */

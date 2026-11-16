@@ -15,7 +15,24 @@ function encryption(available = true, backend = 'gnome_libsecret'): SessionEncry
 }
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 
-describe('dedicated encrypted current-access-token session store', () => {
+describe('dedicated encrypted bounded device-session store', () => {
+  it('encrypts a complete refresh pair and retains it after access expiry, never beyond refresh expiry', async () => {
+    const root = await folder(), store = new EncryptedSessionStore(root, encryption())
+    const value = credential({ refreshToken: 'ghr_REFRESH_CANARY', refreshExpiresAt: now + 100 * 24 * 3600000 })
+    expect(await store.save(value)).toBe(true)
+    const raw = await readFile(join(root, 'collaboration/account-session.json'), 'utf8')
+    expect(raw).not.toMatch(/ghr_REFRESH_CANARY|ghu_SESSION_CANARY|refreshToken|refreshExpiresAt/)
+    expect(await store.load(clientId, value.expiresAt + 1)).toEqual(value)
+    expect(await store.load(clientId, value.refreshExpiresAt!)).toBeNull()
+  })
+  it('rejects partial, malformed, overlong or incorrectly bounded renewal credentials', () => {
+    const refresh = { refreshToken: 'ghr_REFRESH_CANARY', refreshExpiresAt: now + 100 * 24 * 3600000 }
+    expect(validStoredSession(credential(refresh), now)).toEqual(credential(refresh))
+    for (const extra of [{ refreshToken: 'half' }, { refreshExpiresAt: refresh.refreshExpiresAt },
+      { ...refresh, refreshToken: 'bad' + String.fromCharCode(10) + 'value' }, { ...refresh, refreshToken: 'x'.repeat(4097) },
+      { ...refresh, refreshExpiresAt: now + 3600000 }, { ...refresh, refreshExpiresAt: now + 187 * 24 * 3600000 }])
+      expect(() => validStoredSession(credential(extra), now)).toThrow()
+  })
   it('writes only encrypted credential bytes and no account, refresh token or plaintext token fields', async () => {
     const root = await folder(), crypto = encryption(), store = new EncryptedSessionStore(root, crypto)
     expect(await store.load(clientId, now)).toBeNull()

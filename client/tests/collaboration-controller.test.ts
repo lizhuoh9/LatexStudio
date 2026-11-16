@@ -5,7 +5,7 @@ import { COLLABORATION_CHANNELS as C, type CollaborationState, type DevicePrompt
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
   status: vi.fn<() => CollaborationState>(), restore: vi.fn<() => Promise<CollaborationState>>(), start: vi.fn<() => CollaborationState>(),
-  cancel: vi.fn<() => Promise<CollaborationState>>(), logout: vi.fn<() => Promise<CollaborationState>>(),
+  cancel: vi.fn<() => Promise<CollaborationState>>(), logout: vi.fn<() => Promise<CollaborationState>>(), resume: vi.fn<() => void>(),
   projects: vi.fn<() => Promise<unknown[]>>(), open: vi.fn<(url: string) => Promise<void>>(),
   onState: null as ((state: CollaborationState) => void) | null,
   authorize: null as ((prompt: DevicePrompt, signal: AbortSignal) => Promise<void>) | null,
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({ ipcMain: { handle: (name: string, handler: typeof mocks.handlers extends Map<string, infer H> ? H : never) => mocks.handlers.set(name, handler) },
   shell: { openExternal: mocks.open } }))
 vi.mock('../src/main/collaboration/service', () => ({ GitHubAccountService: class {
-  status = mocks.status; restoreSession = mocks.restore; startLogin = mocks.start; cancelAndWait = mocks.cancel; logout = mocks.logout; projects = mocks.projects
+  status = mocks.status; restoreSession = mocks.restore; startLogin = mocks.start; cancelAndWait = mocks.cancel; logout = mocks.logout; projects = mocks.projects; resumeActions = mocks.resume
   constructor(options: { onState: (state: CollaborationState) => void; openAuthorization: typeof mocks.authorize }) {
     mocks.onState = options.onState; mocks.authorize = options.openAuthorization
   }

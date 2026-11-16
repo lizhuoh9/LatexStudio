@@ -4,6 +4,7 @@ import type { CloudProject, CollaborationState } from '../../shared/collaboratio
 export function publicState(state: CollaborationState): CollaborationState {
   return {
     phase: state.phase, message: state.message, sessionOnly: state.sessionOnly !== false, expiresAt: state.expiresAt,
+    ...(state.renewable === true ? { renewable: true } : {}),
     account: state.account ? { id: state.account.id, login: state.account.login, name: state.account.name } : null,
     authorization: state.authorization ? {
       userCode: state.authorization.userCode, verificationUri: 'https://github.com/login/device',
