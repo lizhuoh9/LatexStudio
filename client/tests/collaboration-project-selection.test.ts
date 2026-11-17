@@ -9,7 +9,7 @@ const token = 'ghu_fixture-only-selection-secret'
 const user = { id: 123, login: 'lab-user', name: 'Lab User' }
 const device = { device_code: 'a'.repeat(40), user_code: 'ABCD-EFGH', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 }
 const HANDLE = /^pss\.[1-9][0-9]*\.[1-9][0-9]*\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-const paper = { id: 42, installationId: 17, owner: 'lab-team', name: 'paper', private: true }
+const paper = { id: 42, installationId: 0, owner: 'lab-team', name: 'paper', private: true }
 const services: GitHubAccountService[] = []
 
 async function flush(): Promise<void> { for (let i = 0; i < 250; i++) await Promise.resolve() }
@@ -26,19 +26,18 @@ function repo(extra: Record<string, unknown> = {}) {
 
 function fixture() {
   let clock = 100000
-  const server = { repositories: { total_count: 1, repositories: [repo()] } as unknown,
-    detail: { ...repo(), default_branch: 'main' } as unknown, hold: null as Promise<void> | null, failInstallations: false }
+  const server = { repositories: [repo()] as unknown,
+    detail: { ...repo(), default_branch: 'main' } as unknown, hold: null as Promise<void> | null, failRepositories: false }
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = new URL(String(input))
     if (url.href === 'https://github.com/login/device/code') return json(device)
     if (url.href === 'https://github.com/login/oauth/access_token') return json({ access_token: token, token_type: 'bearer', expires_in: 3600 })
     if (url.href === 'https://api.github.com/user') return json(user)
-    if (url.pathname === '/user/installations') {
+    if (url.pathname === '/user/repos') {
       if (server.hold) await server.hold
-      if (server.failInstallations) return new Response('{}', { status: 500 })
-      return json({ total_count: 1, installations: [{ id: 17 }] })
+      if (server.failRepositories) return new Response('{}', { status: 500 })
+      return json(server.repositories)
     }
-    if (/^\/user\/installations\/17\/repositories$/.test(url.pathname)) return json(server.repositories)
     if (url.pathname === '/repos/lab-team/paper' || url.pathname === '/repos/lab-team/renamed') return json(server.detail)
     throw new Error('Unexpected synthetic endpoint')
   })
@@ -149,16 +148,16 @@ describe('GitHubAccountService project selections', () => {
     await service.projects()
     const [second] = await service.projectSelections()
     expect(await kind(service.withSelectedProjectAccess(first!.handle, async () => 1))).toBe('selection')
-    server.failInstallations = true
+    server.failRepositories = true
     expect(await kind(service.projectSelections())).toBe('network')
-    server.failInstallations = false
+    server.failRepositories = false
     expect(await service.withSelectedProjectAccess(second!.handle, async () => 'still valid')).toBe('still valid')
   })
 
   it('binds the frozen selection: a renamed repository at use time is refused', async () => {
     const { service, server } = await signedIn()
     const [selection] = await service.projectSelections()
-    server.repositories = { total_count: 1, repositories: [repo({ name: 'renamed' })] }
+    server.repositories = [repo({ name: 'renamed' })]
     server.detail = { ...repo({ name: 'renamed' }), default_branch: 'main' }
     const callback = vi.fn(async () => 1)
     // Access failures keep the existing sanitized RepositoryOperationError envelope.
@@ -243,6 +242,6 @@ describe('GitHubAccountService project selections', () => {
     const before = fetcher.mock.calls.length
     const [left, right] = await Promise.all([service.projectSelections(), service.projectSelections()])
     expect(left).toBe(right)
-    expect(fetcher.mock.calls.length - before).toBe(2)
+    expect(fetcher.mock.calls.length - before).toBe(1)
   })
 })

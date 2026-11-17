@@ -65,10 +65,10 @@ export class WorkspaceCloud implements CloudApi {
       if (created.private !== true) throw new Error('无法确认仓库为私有；未关联或上传本地论文，请核对远端。')
       const project = { id: created.id, owner: created.owner, name: created.name, private: true as const }
       if (!created.accessible) return { project, connected: false,
-        message: '私有仓库已创建，但尚未确认本 GitHub App 可访问此仓库。请检查网络及 GitHub 安装设置中的授权范围，再刷新项目并关联；不要重复创建。' }
+        message: '私有仓库已创建，但暂时无法确认访问权限。请检查网络或重新登录 GitHub 后再刷新项目并关联；不要重复创建。' }
       const selections = await this.account.projectSelections()
       const selected = selections.find(value => value.project.id === created.id && value.project.private)
-      if (!selected) return { project, connected: false, message: '私有仓库已创建，授权发现尚未就绪；请刷新项目列表后关联，不要重复创建。' }
+      if (!selected) return { project, connected: false, message: '私有仓库已创建，项目列表尚未同步；请刷新项目列表后关联，不要重复创建。' }
       await this.connect(root, selected.handle, signal)
       return { project, connected: true, message: '已创建并关联私有合作项目。论文尚未上传，点击同步或明确开启自动同步后交换文件。' }
     })
@@ -138,7 +138,7 @@ export class WorkspaceCloud implements CloudApi {
     const result = await this.account.inviteCollaborator(binding.projectId, recipient, {},
       { owner: binding.owner, name: binding.name })
     return { message: result.status === 'already-authorized' ? '该账号已拥有访问权限，无需重复邀请。' :
-      '邀请已发送。对方登录自己的账号接受邀请并给 App 授权此仓库后，即可通过项目链接加入。' }
+      '邀请已发送。对方登录自己的 GitHub 账号并接受邀请后，即可在合作项目列表或通过项目链接下载。' }
   }
 
   async invitations() {
@@ -148,12 +148,12 @@ export class WorkspaceCloud implements CloudApi {
 
   async acceptInvitation(handle: string) {
     if (!await this.host.confirm('接受此 GitHub 仓库邀请？',
-      '接受后你的账号将成为该私有项目的合作者。不会自动下载、上传论文或替你扩展 App 的仓库授权范围。')) {
+      '接受后你的账号将成为该私有项目的合作者。不会自动下载或上传本地论文。')) {
       throw new Error('已取消接受邀请。')
     }
     const accepted = await this.account.acceptInvitation(requireText(handle, '邀请选择', 512))
-    return { message: accepted.accessible ? '已接受邀请。刷新已授权项目后可下载，或粘贴分享链接加入。' :
-      '已接受邀请。还需在 GitHub 为本 App 授权该仓库，再刷新项目；接受邀请不等于安装授权。' }
+    return { message: accepted.accessible ? '已接受邀请。刷新项目列表后可下载，或粘贴分享链接加入。' :
+      '已接受邀请。若刷新项目列表仍未显示，请重新登录 GitHub 授权或核对仓库权限后再试。' }
   }
 
   async sync(summary: string, background: boolean): Promise<SyncResult> {

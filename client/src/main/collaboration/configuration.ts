@@ -1,9 +1,9 @@
 declare const __PAPERSTUDIO_GITHUB_CLIENT_ID__: string | undefined
 declare const __PAPERSTUDIO_GITHUB_APP_SLUG__: string | undefined
 
-/** Publisher-provided public app identifier; never a client secret or an end-user PAT. */
+/** Publisher-provided public OAuth/GitHub App identifier; never a client secret or an end-user PAT. */
 export function validGitHubClientId(value: unknown): string | null {
-  return typeof value === 'string' && /^Iv[1-9][A-Za-z0-9._-]{7,125}$/.test(value) ? value : null
+  return typeof value === 'string' && /^(?:Ov|Iv)[1-9][A-Za-z0-9._-]{7,125}$/.test(value) ? value : null
 }
 
 /** Refuse suspicious publisher input before it can be embedded in a generated bundle. */
@@ -22,10 +22,12 @@ export function buildGitHubAppSlug(value: unknown): string {
   return value
 }
 
-/** Fixed official origin; no renderer-provided URL or credential can enter the browser launcher. */
+/** Fixed official origin; opens OAuth App connection settings or legacy App installation route when an App slug is set. */
 export function githubInstallationUrl(): string {
   const slug = typeof __PAPERSTUDIO_GITHUB_APP_SLUG__ === 'undefined' ? '' : buildGitHubAppSlug(__PAPERSTUDIO_GITHUB_APP_SLUG__)
-  return slug ? `https://github.com/apps/${slug}/installations/new` : 'https://github.com/settings/installations'
+  if (slug) return `https://github.com/apps/${slug}/installations/new`
+  const clientId = githubClientId()
+  return clientId ? `https://github.com/settings/connections/applications/${clientId}` : 'https://github.com/settings/applications'
 }
 
 export function githubClientId(): string | null {

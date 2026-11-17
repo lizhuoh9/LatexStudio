@@ -33,8 +33,9 @@ describe('publisher build input is not a credential field', () => {
     expect(buildGitHubClientId('')).toBe('')
     expect(buildGitHubClientId('Iv1.paperstudio-fixture')).toBe('Iv1.paperstudio-fixture')
     expect(buildGitHubClientId('Iv23fixture-client')).toBe('Iv23fixture-client')
+    expect(buildGitHubClientId('Ov23limlAorsJo0xsOgA')).toBe('Ov23limlAorsJo0xsOgA')
   })
-  it('rejects app numbers, OAuth identifiers and recognizable credential shapes', () => {
+  it('rejects app numbers, bare hex strings and recognizable credential shapes', () => {
     for (const input of ['1234567890', 'a'.repeat(40), 'ghp_' + 'x'.repeat(40), 'github_pat_' + 'x'.repeat(60)]) {
       expect(validGitHubClientId(input)).toBeNull()
       expect(() => buildGitHubClientId(input)).toThrow('公共 Client ID')
@@ -59,15 +60,18 @@ describe('publisher-controlled official installation links', () => {
     vi.stubGlobal('__PAPERSTUDIO_GITHUB_APP_SLUG__', 'paperstudio-lab')
     expect(githubInstallationUrl()).toBe('https://github.com/apps/paperstudio-lab/installations/new')
   })
-  it('falls back to official installation settings without a slug', () => {
+  it('falls back to OAuth connection settings or application settings without a slug', () => {
     vi.stubGlobal('__PAPERSTUDIO_GITHUB_APP_SLUG__', undefined)
-    expect(githubInstallationUrl()).toBe('https://github.com/settings/installations')
+    vi.stubGlobal('__PAPERSTUDIO_GITHUB_CLIENT_ID__', 'Ov23limlAorsJo0xsOgA')
+    expect(githubInstallationUrl()).toBe('https://github.com/settings/connections/applications/Ov23limlAorsJo0xsOgA')
+    vi.stubGlobal('__PAPERSTUDIO_GITHUB_CLIENT_ID__', undefined)
+    expect(githubInstallationUrl()).toBe('https://github.com/settings/applications')
   })
 })
 
 describe('reviewed public publisher defaults', () => {
-  it('keeps the supplied Client ID and matching App slug across ordinary and Mac-source builds', () => {
-    expect(resolvePublicGitHubApp({})).toEqual({ clientId: 'Iv23ctZVs9suln7YQPrX', appSlug: 'latexfactory' })
+  it('keeps the supplied Client ID and empty slug across ordinary and Mac-source builds', () => {
+    expect(resolvePublicGitHubApp({})).toEqual({ clientId: 'Ov23limlAorsJo0xsOgA', appSlug: '' })
     expect(resolvePublicGitHubApp({})).toEqual(publicGitHubApp)
     expect(Object.isFrozen(publicGitHubApp)).toBe(true)
   })

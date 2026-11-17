@@ -25,7 +25,7 @@ const TEMPLATE = `
   <label for="join-link">项目链接</label><input id="join-link" type="url" placeholder="粘贴项目分享链接" autocomplete="off" spellcheck="false" maxlength="2048">
   <strong id="join-repository" class="sharing-repository"></strong><p id="join-status" role="status" aria-live="polite"></p>
   <div class="button-row"><button id="join-sign-in">GitHub登录</button><button id="join-download">选择本地文件夹并下载</button><button id="join-cancel-transfer" class="secondary" hidden>取消传输</button></div>
-  <div class="button-row"><button id="join-invitations" class="secondary">查看此项目的邀请</button><button id="join-authorization" class="secondary">管理 GitHub 项目授权</button></div>
+  <div class="button-row"><button id="join-invitations" class="secondary">查看此项目的邀请</button><button id="join-authorization" class="secondary">管理 GitHub 账号授权</button></div>
   <ul id="join-invitation-list" class="detail-list"></ul>
   <textarea id="join-error" class="sharing-error" aria-label="完整错误详情" readonly rows="6" hidden></textarea>
 </dialog>`

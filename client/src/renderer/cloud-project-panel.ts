@@ -22,13 +22,13 @@ const TEMPLATE = `
     <textarea id="cp-error-detail" aria-label="完整错误详情" rows="8" readonly spellcheck="false" wrap="soft"></textarea>
     <p id="cp-error-copy-status" role="status" aria-live="polite"></p>
   </section>
-  <button id="cp-authorization" type="button">管理 GitHub 项目授权</button>
+  <button id="cp-authorization" type="button">管理 GitHub 账号授权</button>
   <details class="cp-group"><summary>创建或加入合作项目</summary>
   <div class="cp-row"><label>项目名称 <input id="cp-name" placeholder="my-paper（字母、数字、短横线）" maxlength="100"></label>
   <button id="cp-create" type="button">创建私有合作项目</button></div>
   <div class="cp-row"><label>合作链接 <input id="cp-join-link" type="url" placeholder="粘贴项目分享链接"></label>
   <button id="cp-join" type="button">加入并下载到本地</button></div>
-  <p class="cp-note">链接不会授予私有项目权限。请先登录、接受邀请，并为应用授权该项目，再下载。</p></details>
+  <p class="cp-note">链接不会授予私有项目权限。请先登录并接受合作邀请，再通过链接或项目列表下载。</p></details>
   <details class="cp-group"><summary>我的项目与合作邀请</summary>
   <div class="cp-row"><button id="cp-projects" type="button">查看我的云端项目</button>
   <button id="cp-invitations" type="button">查看合作邀请</button>

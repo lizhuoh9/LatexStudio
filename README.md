@@ -27,7 +27,7 @@ Local editing requires no account. GitHub login opens the official device-author
 
 Sync the files you intend to share, then click **Share** to copy a `latexstudio://join/owner/repository` link. The recipient can open it with an installed app, or choose **Join project** on the homepage and paste it (a normal GitHub HTTPS repository URL also works). After explicit confirmation, choose an empty local folder and download; editing and Sync keep the original repository, not a newly created remote copy. Opening a link alone never signs in, accepts an invitation, selects a folder or transfers files.
 
-Private repository membership and the owning account's GitHub App installation scope are still required. A link is not an access credential. Development/portable copies do not claim the OS protocol; paste the link inside the app instead. See the [sharing guide](docs/PROJECT-SHARING.md) for permissions, cancellation and the clearly separated mocked desktop versus real-account verification boundaries.
+Private repository membership is still required. Since 0.4.7 sign-in uses a GitHub OAuth App device flow with the `repo` scope (one authorization for your repositories instead of per-repository App installation); the app still reads and writes only the private project you explicitly create, link, download or sync, and you can revoke it under GitHub Settings → Applications → Authorized OAuth Apps. A link is not an access credential. Development/portable copies do not claim the OS protocol; paste the link inside the app instead. See the [sharing guide](docs/PROJECT-SHARING.md) for permissions, cancellation and the clearly separated mocked desktop versus real-account verification boundaries.
 
 ## Build from source
 

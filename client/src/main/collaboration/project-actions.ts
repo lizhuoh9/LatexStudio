@@ -32,6 +32,13 @@ export async function actionProjects(context: ProjectActionContext, scope: Repos
     scope.check(); context.check()
   }))
 }
+/** After a confirmed remote write, an unreachable, refused or over-limit project listing only means "access not
+ * confirmed yet". It must not surface as a failure that invites a second create or accept.
+ */
+function listingUnavailable(error: unknown): boolean {
+  if (readRepositoryOperationFailure(error)?.cleanupFailed) return false
+  return ['network', 'forbidden'].includes(readOperationDiagnostic(error) ?? '') || (error instanceof CollaborationError && error.kind === 'limit')
+}
 async function availability(context: ProjectActionContext, scope: RepositoryOperationScope,
   value: Omit<CreatedPrivateProject, 'accessible'>): Promise<CreatedPrivateProject> {
   const projects = await actionProjects(context, scope)
@@ -49,8 +56,7 @@ export async function createPrivateProject(context: ProjectActionContext, scope:
     // A validated private:true POST already succeeded. An unavailable installation
     // listing must not invite a duplicate POST; no access or upload is granted.
     context.check(); scope.check()
-    const code = readOperationDiagnostic(error)
-    if (readRepositoryOperationFailure(error)?.cleanupFailed || !['network', 'forbidden'].includes(code ?? '')) throw error
+    if (!listingUnavailable(error)) throw error
     return { ...value, accessible: false }
   }
 }
@@ -82,8 +88,7 @@ export async function acceptInvitation(context: ProjectActionContext, scope: Rep
     // The validated invitation PATCH already succeeded. A temporarily unavailable
     // installation listing grants no access and must not encourage another PATCH.
     context.check(); scope.check()
-    const code = readOperationDiagnostic(error)
-    if (readRepositoryOperationFailure(error)?.cleanupFailed || !['network', 'forbidden'].includes(code ?? '')) throw error
+    if (!listingUnavailable(error)) throw error
     return { ...value, accessible: false }
   }
 }

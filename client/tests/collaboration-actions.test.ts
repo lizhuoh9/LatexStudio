@@ -46,9 +46,8 @@ async function signedIn(hook?: Hook) {
     if (url.pathname === '/login/device/code') return json(prompt)
     if (url.pathname === '/login/oauth/access_token') return json({ access_token: token, token_type: 'bearer', expires_in: 300 })
     if (url.pathname === '/user') return json(server.profile)
-    if (url.pathname === '/user/installations') return json({ total_count: 1, installations: [{ id: 17 }] })
-    if (url.pathname === '/user/installations/17/repositories') return json({ total_count: server.repositories.length, repositories: server.repositories })
     if (url.pathname === '/user/repos' && init?.method === 'POST') return json(server.created, 201)
+    if (url.pathname === '/user/repos') return json(server.repositories)
     if (url.pathname === '/user/repository_invitations') return json(server.invitations)
     if (url.pathname === '/user/repository_invitations/88' && init?.method === 'PATCH') return new Response(null, { status: 204 })
     if (url.pathname === '/repos/lab-user/paper/collaborators/alice') return json(inviteRow({ invitee: { login: 'alice' } }), 201)
@@ -101,8 +100,8 @@ it.each([[403, '403'], [422, '422'], [503, '网络']])('preserves safe create st
   expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
   expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith('/user/repos') && init?.method === 'POST')).toHaveLength(1)
 })
-it.each([403, 503])('keeps confirmed private creation as inaccessible when installation check fails with %s', async status => {
-  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? json({ message: token }, status) : undefined)
+it.each([403, 503])('keeps confirmed private creation as inaccessible when repository check fails with %s', async status => {
+  const { service, fetcher } = await signedIn((url, init) => url.pathname === '/user/repos' && init?.method !== 'POST' ? json({ message: token }, status) : undefined)
   expect(await service.createPrivateProject('paper')).toEqual({ id: 42, owner: 'lab-user', name: 'paper', private: true, accessible: false })
   expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith('/user/repos') && init?.method === 'POST')).toHaveLength(1)
 })
@@ -164,8 +163,8 @@ it('accepts membership but does not pretend an uninstalled project became access
   const { service, server } = await signedIn(), [item] = await service.invitations(); server.repositories = []
   expect(await service.acceptInvitation(item!.handle)).toMatchObject({ accessible: false })
 })
-it.each([403, 503])('preserves a confirmed invitation acceptance when installation listing returns %s', async status => {
-  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? json({ message: token }, status) : undefined)
+it.each([403, 503])('preserves a confirmed invitation acceptance when repository listing returns %s', async status => {
+  const { service, fetcher } = await signedIn((url, init) => url.pathname === '/user/repos' && init?.method !== 'POST' ? json({ message: token }, status) : undefined)
   const [item] = await service.invitations(), before = fetcher.mock.calls.length
   const result = await service.acceptInvitation(item!.handle)
   expect(result).toEqual({ id: 42, owner: 'lab-user', name: 'paper', private: true, accessible: false })
@@ -184,7 +183,7 @@ it.each([201, 403, 503])('does not turn a non-204 acceptance response %s into co
   expect(readRepositoryOperationFailure(error)?.remoteWriteMayHaveCompleted).toBe(true)
   expect(String(error)).not.toContain(token)
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1)
-  expect(fetcher.mock.calls.some(([url]) => String(url).includes('/user/installations'))).toBe(false)
+  expect(fetcher.mock.calls.some(([url]) => new URL(String(url)).pathname === '/user/repos')).toBe(false)
 })
 it('does not hide a changed repository identity after confirmed invitation acceptance', async () => {
   const { service, server, fetcher } = await signedIn(), [item] = await service.invitations()
@@ -195,8 +194,8 @@ it('does not hide a changed repository identity after confirmed invitation accep
 })
 it.each(['cancel', 'expiry', 'deadline'] as const)('does not return confirmed membership after %s interrupts discovery', async interruption => {
   let interrupt: () => void = () => undefined
-  const { service, fetcher, advance } = await signedIn(url => {
-    if (url.pathname === '/user/installations') { interrupt(); return json({ message: token }, 403) }
+  const { service, fetcher, advance } = await signedIn((url, init) => {
+    if (url.pathname === '/user/repos' && init?.method !== 'POST') { interrupt(); return json({ message: token }, 403) }
   })
   const [item] = await service.invitations(), abort = new AbortController()
   interrupt = () => {
@@ -214,7 +213,7 @@ it('retains a known discovery cleanup veto after confirmed invitation acceptance
     scope.own({ close: async () => { throw new Error(token) } })
     throw new CollaborationError('network')
   }))
-  const { service, fetcher } = await signedIn(url => url.pathname === '/user/installations' ? Promise.reject(cleanup) : undefined)
+  const { service, fetcher } = await signedIn((url, init) => url.pathname === '/user/repos' && init?.method !== 'POST' ? Promise.reject(cleanup) : undefined)
   const [item] = await service.invitations(), error = await caught(service.acceptInvitation(item!.handle))
   expect(readRepositoryOperationFailure(error)).toMatchObject({ cleanupFailed: true, remoteWriteMayHaveCompleted: true })
   expect(String(error)).not.toContain(token)
@@ -461,4 +460,23 @@ it('participates in transfer cancellation before any action request and consumes
   const abort = new AbortController(); abort.abort()
   await expect(service.createPrivateProject('paper', { signal: abort.signal })).rejects.toThrow()
   expect(fetcher).toHaveBeenCalledTimes(before)
+})
+it('asks GitHub only for private repositories, in a stable order, when discovering projects', async () => {
+  const { service, fetcher } = await signedIn()
+  await service.createPrivateProject('paper')
+  const lists = fetcher.mock.calls.filter(([url, init]) => new URL(String(url)).pathname === '/user/repos' && init?.method !== 'POST').map(([url]) => new URL(String(url)).searchParams)
+  expect(lists.length).toBeGreaterThan(0)
+  for (const query of lists) {
+    expect(query.get('visibility')).toBe('private'); expect(query.get('sort')).toBe('full_name')
+    expect(query.get('affiliation')).toBe('owner,collaborator,organization_member'); expect(query.get('per_page')).toBe('50')
+  }
+})
+it('keeps a confirmed private creation as inaccessible, without a second create, when the account exceeds the discovery limit', async () => {
+  const { service, fetcher } = await signedIn((url, init) => {
+    if (url.pathname !== '/user/repos' || init?.method === 'POST') return undefined
+    const page = Number(url.searchParams.get('page'))
+    return json(Array.from({ length: 50 }, (_, index) => ({ ...repository, id: 1000 + page * 100 + index, name: `repo-${page}-${index}` })))
+  })
+  expect(await service.createPrivateProject('paper')).toEqual({ id: 42, owner: 'lab-user', name: 'paper', private: true, accessible: false })
+  expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith('/user/repos') && init?.method === 'POST')).toHaveLength(1)
 })

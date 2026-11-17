@@ -1,5 +1,7 @@
 # 发布者一次性配置 GitHub App（普通用户无需注册 App）
 
+> **0.4.7 起改用 OAuth App**：发布构建现在使用发布者注册的 GitHub **OAuth App**（公共 Client ID 以 `Ov` 开头，见 `client/github-app.public.ts`），仍然只走设备登录（Device Flow），不使用也不打包 client secret。设备码请求固定申请 `repo` 权限，项目发现改用 `GET /user/repos`。OAuth App 的用户令牌没有到期时间也没有刷新令牌：软件把它只保存在主进程和操作系统加密的会话存储里，每个 8 小时本地窗口结束前以及每次启动恢复时重新向 GitHub 核对账号，核对失败（401 或账号不一致）立即结束登录并清除本机凭据，超过 186 天未使用需重新登录。客户端无法代用户撤销 OAuth 授权（撤销需要 client secret），退出登录只清除本机凭据；用户可在 GitHub 的 Settings → Applications → Authorized OAuth Apps 中撤销。发布者需要在 OAuth App 设置中勾选 **Enable Device Flow**。下文各节记录的是 0.4.6 及之前的 GitHub App 配置，保留作历史参考；其中“只接受 `Iv` 开头的 Client ID”“不改用 OAuth App”“按安装范围授权仓库”等说法已不适用于新版。
+
 ## 状态与边界
 
 截至 2026-11-16：GitHub 是唯一产品协作路线；本地离线编辑、历史与已准备好的 Windows TeX 编译不要求 GitHub 账号。Windows 实际 App 登录、私有建库、指定项目关联、首次上传、独立第二目录下载、两副本交替同步和取消恢复已完成真实账号验证；不冒充第二个人邀请接受或 Mac GUI 验收。0.3.8 增加官方设备流程的自动续期，覆盖模拟跨过访问期限、加密恢复、退出与断网重试；尚未等待真实账号跨过八小时来证明现场续期。

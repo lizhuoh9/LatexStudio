@@ -98,7 +98,7 @@ afterEach(async () => { await Promise.all(services.splice(0).map((service) => se
     expect(fetcher).toHaveBeenCalledTimes(3)
     const first = fetcher.mock.calls[0]!
     expect(first[0]).toBe('https://github.com/login/device/code')
-    expect(new URLSearchParams(first[1]!.body as string)).toEqual(new URLSearchParams({ client_id: clientId }))
+    expect(new URLSearchParams(first[1]!.body as string)).toEqual(new URLSearchParams({ client_id: clientId, scope: 'repo' }))
     const poll = fetcher.mock.calls[1]!
     expect(poll[0]).toBe('https://github.com/login/oauth/access_token')
     expect(new URLSearchParams(poll[1]!.body as string).get('device_code')).toBe(deviceCode)
@@ -232,13 +232,20 @@ afterEach(async () => { await Promise.all(services.splice(0).map((service) => se
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
-  it.each([{ access_token: 'bad\nheader' }, { token_type: 'mac' }, { scope: 'repo' }, { expires_in: 0 }, { expires_in: -1 }])(
-    'rejects invalid or over-scoped token response %j', async (change) => {
+  it.each([{ access_token: 'bad\nheader' }, { token_type: 'mac' }, { scope: 'read:user' }, { expires_in: 0 }, { expires_in: -1 }])(
+    'rejects invalid or under-scoped token response %j', async (change) => {
       const { service, fetcher } = fixture([device, { ...grant, ...change }])
       service.startLogin()
       await complete(service, 'error')
       expect(fetcher).toHaveBeenCalledTimes(2)
     })
+
+  it('accepts OAuth responses returning repo scope alongside read scopes', async () => {
+    const { service } = fixture([device, { ...grant, scope: 'read:user repo' }, profile])
+    service.startLogin()
+    await complete(service)
+    expect(service.status().account!.login).toBe('lab-user')
+  })
 
   it.each([{ id: 0 }, { id: 1.1 }, { login: '../escape' }, { name: 'bad\u0000name' }, { name: 123 }])(
     'rejects invalid profile response %j', async (change) => {

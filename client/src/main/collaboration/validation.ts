@@ -9,8 +9,8 @@ const messages: Record<Failure, string> = {
   unauthorized: '此设备的登录已失效，请重新登录。', denied: '你已取消云端授权。',
   expired: '授权或登录已过期，请重新登录。', disabled: '发布者尚未启用设备登录，请联系软件提供者。',
   limit: '云端项目数量或分页超过安全限额，未返回不完整列表，请联系软件提供者。',
-  forbidden: 'GitHub 拒绝此操作（403），请检查 App 权限、安装范围和账号策略。',
-  'create-forbidden': 'GitHub 拒绝创建仓库（403），请检查并批准 GitHub App 的仓库创建权限。',
+  forbidden: 'GitHub 拒绝此操作（403），请检查账号权限或重新登录授权。',
+  'create-forbidden': 'GitHub 拒绝创建仓库（403），请确认已完成登录授权（repo 权限）并检查账号限制。',
   'invalid-repository': 'GitHub 未接受仓库名称或创建参数（422），请检查是否已有同名仓库。',
   'signed-out': '请先登录云端账号。',
   selection: '项目选择已失效，请重新打开项目列表后再选择。'
@@ -65,17 +65,34 @@ const REFRESH_SECONDS = 186 * 24 * 3600
 function refreshCredential(data: Record<string, unknown>, now: number, accessSeconds: number): Partial<SessionToken> {
   // Legacy/partial responses remain access-only; never invent a durable authorization.
   if (data.refresh_token === undefined || data.refresh_token_expires_in === undefined) return {}
-  if (typeof data.refresh_token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(data.refresh_token)) throw new CollaborationError('response')
+  // An access token repeated as its own refresh token is the internal marker of a durable OAuth session, never a server reply.
+  if (typeof data.refresh_token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(data.refresh_token) ||
+    data.refresh_token === data.access_token) throw new CollaborationError('response')
   const seconds = integer(data.refresh_token_expires_in, REFRESH_SECONDS)
   if (seconds <= accessSeconds) throw new CollaborationError('response')
   return { refreshToken: data.refresh_token, refreshExpiresAt: now + seconds * 1000,
     refreshMonotonicExpiresAt: performance.now() + seconds * 1000 }
 }
+const DURABLE_WINDOW_SECONDS = 8 * 3600
+/** An OAuth App user token (repo scope) has no expiry and no refresh token. It stays signed in only by a fresh
+ * account check before each local window ends, so the token doubles as its own renewal credential. That copy
+ * is never sent to the refresh endpoint, and a rejected or different account ends the session.
+ */
+export function isDurable(token: Pick<SessionToken, 'token' | 'refreshToken'>): boolean { return token.refreshToken === token.token }
+export function durableToken(access: string, now: number): SessionToken {
+  return { token: access, expiresAt: now + DURABLE_WINDOW_SECONDS * 1000, monotonicExpiresAt: performance.now() + DURABLE_WINDOW_SECONDS * 1000,
+    conservative: false, refreshToken: access, refreshExpiresAt: now + REFRESH_SECONDS * 1000,
+    refreshMonotonicExpiresAt: performance.now() + REFRESH_SECONDS * 1000 }
+}
 export function sessionToken(value: unknown, now: number): SessionToken {
   const data = record(value)
+  const scopes = typeof data.scope === 'string' ? data.scope.split(/[\s,]+/) : []
+  const validScope = data.scope === undefined || data.scope === '' || scopes.includes('repo')
   if (typeof data.access_token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(data.access_token) ||
     typeof data.token_type !== 'string' || data.token_type.toLowerCase() !== 'bearer' ||
-    (data.scope !== undefined && data.scope !== '')) throw new CollaborationError('response')
+    !validScope) throw new CollaborationError('response')
+  if (data.expires_in === undefined && data.refresh_token === undefined && data.refresh_token_expires_in === undefined && scopes.includes('repo'))
+    return durableToken(data.access_token, now)
   const expires = data.expires_in === undefined ? 3600 : Math.min(integer(data.expires_in), 8 * 3600)
   return { token: data.access_token, expiresAt: now + expires * 1000,
     monotonicExpiresAt: performance.now() + expires * 1000, conservative: data.expires_in === undefined,

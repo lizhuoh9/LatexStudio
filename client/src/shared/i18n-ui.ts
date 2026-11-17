@@ -177,6 +177,7 @@ export const UI_TRANSLATIONS = [
   ['关闭详情', 'Dismiss details', '상세 정보 닫기'],
   ['完整错误详情', 'Full error details', '전체 오류 상세 정보'],
   ['管理 GitHub 项目授权', 'Manage GitHub project authorization', 'GitHub 프로젝트 권한 관리'],
+  ['管理 GitHub 账号授权', 'Manage GitHub account authorization', 'GitHub 계정 권한 관리'],
   ['创建或加入合作项目', 'Create or join a collaboration project', '협업 프로젝트 만들기 또는 참여'],
   ['项目名称', 'Project name', '프로젝트 이름'],
   ['my-paper（字母、数字、短横线）', 'my-paper (letters, numbers and hyphens)', 'my-paper (영문자, 숫자, 하이픈)'],

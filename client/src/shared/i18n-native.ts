@@ -42,6 +42,7 @@ export const NATIVE_TRANSLATIONS = [
   ['无法载入本地工作台。请重新安装或检查应用目录权限。', 'Unable to load the local workspace. Reinstall or check application directory permissions.', '로컬 작업 공간을 불러올 수 없습니다. 다시 설치하거나 앱 디렉터리 권한을 확인하세요.'],
   ['接受此 GitHub 仓库邀请？', 'Accept this GitHub repository invitation?', '이 GitHub 저장소 초대를 수락하시겠습니까?'],
   ['接受后你的账号将成为该私有项目的合作者。不会自动下载、上传论文或替你扩展 App 的仓库授权范围。', 'Accepting makes your account a collaborator on this private project. It will not automatically download or upload papers, or expand the App’s repository access.', '수락하면 이 비공개 프로젝트의 공동 작업자가 됩니다. 논문을 자동으로 다운로드하거나 업로드하지 않으며 App의 저장소 접근 범위도 확장하지 않습니다.'],
+  ['接受后你的账号将成为该私有项目的合作者。不会自动下载或上传本地论文。', 'Accepting makes your account a collaborator on this private project. It will not automatically download or upload local papers.', '수락하면 이 비공개 프로젝트의 공동 작업자가 됩니다. 로컬 논문을 자동으로 다운로드하거나 업로드하지 않습니다.'],
   ['为此项目开启本次会话的自动同步？', 'Enable auto-sync for this project for this session?', '이번 세션 동안 이 프로젝트의 자동 동기화를 켜시겠습니까?'],
   ['App 将在联网且草稿已保存时约每 30 秒尝试提交并交换项目文件。首次失败或冲突会停用，不无限重试；关闭、退出或换项目后需重新开启。', 'While online with the draft saved, the App will try to commit and exchange project files about every 30 seconds. The first failure or conflict disables it; there are no endless retries. Enable it again after closing, signing out or switching projects.', '온라인 상태이며 초안이 저장된 경우 App은 약 30초마다 프로젝트 파일의 커밋과 교환을 시도합니다. 첫 실패나 충돌 시 꺼지며 무한 재시도하지 않습니다. 창 닫기, 로그아웃 또는 프로젝트 전환 후에는 다시 켜야 합니다.'],
 ] as const

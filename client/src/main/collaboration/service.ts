@@ -199,7 +199,7 @@ export class GitHubAccountService {
     this.quiescing++; this.restoreChecked = true
     try {
       let cleanupFailure: unknown = null
-      try { await this.stop(true, '已退出此设备；未撤销云端授权。') } catch (error) { cleanupFailure = error }
+      try { await this.stop(true, '已退出此设备；未撤销云端授权，可在 GitHub 的 Settings → Applications 中撤销。') } catch (error) { cleanupFailure = error }
       try { await this.clearSaved() } catch {
         if (cleanupFailure !== null) throw cleanupFailure
         this.publish({ ...initialState(this.clientId !== null), phase: 'error', message: '无法移除保存的登录，请重试退出。' })

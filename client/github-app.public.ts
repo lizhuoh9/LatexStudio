@@ -1,8 +1,7 @@
 import { buildGitHubAppSlug, buildGitHubClientId } from './src/main/collaboration/configuration'
 
-// Publisher-confirmed PUBLIC identifier, never a secret, token or numeric App ID.
-// Supplied with the publisher's settings/apps/latexfactory page; ownership/device flow still require real-account testing.
-export const publicGitHubApp = Object.freeze({ clientId: 'Iv23ctZVs9suln7YQPrX', appSlug: 'latexfactory' })
+// Publisher-confirmed PUBLIC OAuth App identifier (Device Flow with repo scope), never a secret or token.
+export const publicGitHubApp = Object.freeze({ clientId: 'Ov23limlAorsJo0xsOgA', appSlug: '' })
 
 /** Explicit empty overrides still produce an unconfigured build; malformed overrides fail closed. */
 export function resolvePublicGitHubApp(environment: NodeJS.ProcessEnv = process.env): { clientId: string; appSlug: string } {

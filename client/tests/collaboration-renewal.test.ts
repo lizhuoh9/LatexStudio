@@ -79,7 +79,7 @@ describe('encrypted persistent device-flow login with rotating refresh credentia
     expect(item.service.status()).toMatchObject({ phase: 'signed-in', renewable: true })
     expect(saved.saved()).toMatchObject({ token: rotated.access_token, refreshToken: rotated.refresh_token })
     expect(item.open).not.toHaveBeenCalled()
-    expect(item.fetcher.mock.calls.filter(([url]) => String(url).includes('/user/installations'))).toHaveLength(0)
+    expect(item.fetcher.mock.calls.filter(([url]) => String(url).includes('/user/repos'))).toHaveLength(0)
   })
   it('keeps the rotated live credential in memory when storage becomes unavailable instead of reusing the invalid old pair', async () => {
     const saved = store(), item = fixture([device, grant, profile, rotated, profile], saved.api)
@@ -99,10 +99,10 @@ describe('encrypted persistent device-flow login with rotating refresh credentia
     expect(saved.saved()).toMatchObject({ token: rotated.access_token, refreshToken: rotated.refresh_token })
     expect(item.service.status()).toMatchObject({ phase: 'signed-in', renewable: true })
     expect(item.open).toHaveBeenCalledOnce()
-    expect(item.fetcher.mock.calls.filter(([url]) => String(url).includes('/user/installations'))).toHaveLength(0)
+    expect(item.fetcher.mock.calls.filter(([url]) => String(url).includes('/user/repos'))).toHaveLength(0)
   })
   it('coalesces live renewal before project discovery and never sends the old access credential afterward', async () => {
-    const saved = store(), item = fixture([device, grant, profile, rotated, profile, { installations: [], total_count: 0 }], saved.api)
+    const saved = store(), item = fixture([device, grant, profile, rotated, profile, []], saved.api)
     item.service.startLogin(); await flush(); item.setClock(NOW + 8 * HOUR + 6000)
     const [projects, state] = await Promise.all([item.service.projects(), item.service.restoreSession()])
     expect(projects).toEqual([]); expect(state.phase).toBe('signed-in')
@@ -151,7 +151,7 @@ describe('encrypted persistent device-flow login with rotating refresh credentia
     item.setClock(NOW + 8 * HOUR - 30000)
     expect((await item.service.restoreSession()).phase).toBe('signed-in')
     expect(item.fetcher).toHaveBeenCalledTimes(4)
-    release(json({ installations: [], total_count: 0 })); await reading
+    release(json([])); await reading
     expect((await item.service.restoreSession()).phase).toBe('signed-in')
     expect(saved.saved()?.token).toBe(rotated.access_token)
   })
@@ -193,5 +193,85 @@ describe('encrypted persistent device-flow login with rotating refresh credentia
     const saved = store(expired()), item = fixture([{ error: 'bad_refresh_token' }], saved.api)
     expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', account: null })
     expect(saved.saved()).toBeNull(); expect(item.fetcher).toHaveBeenCalledOnce(); expect(item.open).not.toHaveBeenCalled()
+  })
+})
+
+describe('non-expiring OAuth App login stays signed in by re-verifying identity instead of ending after one hour', () => {
+  const oauth = { access_token: 'gho_DURABLE_ACCESS_CANARY', token_type: 'bearer', scope: 'repo' }
+  const durable = (): StoredSession => Object.assign({ id, clientId, token: oauth.access_token,
+    issuedAt: NOW - 30 * HOUR, expiresAt: NOW - 22 * HOUR, conservative: false },
+  { refreshToken: oauth.access_token, refreshExpiresAt: NOW + 100 * 24 * HOUR })
+  const refreshCalls = (item: ReturnType<typeof fixture>) => item.fetcher.mock.calls.filter(([, init]) => String(init?.body).includes('grant_type=refresh_token'))
+  it('signs in durably with one encrypted credential and exposes neither it nor a refresh request', async () => {
+    const saved = store(), item = fixture([device, oauth, profile], saved.api)
+    item.service.startLogin(); await flush()
+    expect(item.service.status()).toMatchObject({ phase: 'signed-in', sessionOnly: false, renewable: true, account: { id: 7 } })
+    expect(saved.saved()).toMatchObject({ token: oauth.access_token, refreshToken: oauth.access_token, conservative: false })
+    expect(saved.saved()!.expiresAt - saved.saved()!.issuedAt).toBeLessThanOrEqual(8 * HOUR)
+    expect(saved.saved()!.expiresAt - saved.saved()!.issuedAt).toBeGreaterThan(7 * HOUR)
+    expect(saved.saved()!.refreshExpiresAt! - saved.saved()!.issuedAt).toBeLessThanOrEqual(186 * 24 * HOUR)
+    expect(JSON.stringify(item.service.status())).not.toMatch(/CANARY|refreshToken|access_token/)
+    expect(refreshCalls(item)).toHaveLength(0)
+  })
+  it('extends the session before its local window ends through a fresh identity check, without a refresh request or browser', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const saved = store(), item = fixture([device, oauth, profile, profile], saved.api)
+    item.service.startLogin(); await flush(); const first = saved.saved()!
+    item.setClock(NOW + 5000 + 8 * HOUR - 5 * 60000)
+    await vi.advanceTimersByTimeAsync(8 * HOUR - 5 * 60000)
+    expect(item.service.status()).toMatchObject({ phase: 'signed-in', renewable: true, account: { id: 7 } })
+    expect(saved.saved()).toMatchObject({ token: oauth.access_token, refreshToken: oauth.access_token })
+    expect(saved.saved()!.id).not.toBe(first.id); expect(saved.saved()!.expiresAt).toBeGreaterThan(first.expiresAt)
+    expect(refreshCalls(item)).toHaveLength(0); expect(item.open).toHaveBeenCalledOnce(); expect(item.fetcher).toHaveBeenCalledTimes(4)
+    expect(String(item.fetcher.mock.calls[3]![0])).toBe('https://api.github.com/user')
+  })
+  it('restores after a restart long past the local window only after a fresh identity check', async () => {
+    const saved = store(durable()), item = fixture([profile], saved.api)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-in', sessionOnly: false, renewable: true, account: { id: 7 } })
+    expect(item.fetcher).toHaveBeenCalledOnce(); expect(String(item.fetcher.mock.calls[0]![0])).toBe('https://api.github.com/user')
+    expect(saved.saved()).toMatchObject({ token: oauth.access_token, refreshToken: oauth.access_token })
+    expect(saved.saved()!.id).not.toBe(id); expect(saved.saved()!.expiresAt).toBeGreaterThan(NOW); expect(item.open).not.toHaveBeenCalled()
+  })
+  it('ends the session and removes the credential when GitHub rejects the token', async () => {
+    const saved = store(durable()), item = fixture([new Response('{}', { status: 401, headers: { 'content-type': 'application/json' } })], saved.api)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', account: null })
+    expect(saved.saved()).toBeNull(); expect(refreshCalls(item)).toHaveLength(0); expect(item.open).not.toHaveBeenCalled()
+  })
+  it('removes the credential when the re-verified identity is a different account', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const saved = store(), item = fixture([device, oauth, profile, { ...profile, id: 8 }], saved.api)
+    item.service.startLogin(); await flush()
+    item.setClock(NOW + 5000 + 8 * HOUR - 5 * 60000); await vi.advanceTimersByTimeAsync(8 * HOUR - 5 * 60000)
+    expect(item.service.status()).toMatchObject({ phase: 'signed-out', account: null }); expect(saved.saved()).toBeNull()
+  })
+  it('keeps the encrypted credential through a temporary network failure and recovers on a later read', async () => {
+    const saved = store(durable()), item = fixture([new Error('PRIVATE_NETWORK'), profile], saved.api)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', account: null })
+    expect(saved.saved()).toMatchObject({ token: oauth.access_token, refreshToken: oauth.access_token })
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-in', account: { id: 7 } })
+    expect(item.service.status().message).not.toContain('PRIVATE_NETWORK'); expect(refreshCalls(item)).toHaveLength(0)
+  })
+  it('requires a new login once the stored authorization window itself has passed', async () => {
+    const old = Object.assign(durable(), { issuedAt: NOW - 190 * 24 * HOUR, expiresAt: NOW - 190 * 24 * HOUR + 8 * HOUR, refreshExpiresAt: NOW - 4 * 24 * HOUR })
+    const saved = store(old), item = fixture([], saved.api)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', account: null })
+    expect(saved.saved()).toBeNull(); expect(item.fetcher).not.toHaveBeenCalled()
+  })
+  it('still treats a response without expiry and without repo scope as a one-hour session that is not renewed', async () => {
+    const saved = store(), item = fixture([device, { access_token: 'ghu_SHORT_ACCESS_CANARY', token_type: 'bearer', scope: '' }, profile], saved.api)
+    item.service.startLogin(); await flush()
+    expect(item.service.status()).toMatchObject({ phase: 'signed-in' }); expect(item.service.status().renewable).toBeUndefined()
+    expect(saved.saved()).toMatchObject({ conservative: true }); expect(saved.saved()!.refreshToken).toBeUndefined()
+    expect(saved.saved()!.expiresAt - saved.saved()!.issuedAt).toBeLessThanOrEqual(HOUR)
+  })
+})
+
+describe('a rotating GitHub App session can never be turned into a non-expiring one by a refresh reply', () => {
+  it('rejects a refresh reply without expiry and keeps the existing encrypted pair for a later retry', async () => {
+    const credential = expired(), saved = store(credential)
+    const item = fixture([{ access_token: 'gho_UNEXPECTED_DURABLE_CANARY', token_type: 'bearer', scope: 'repo' }], saved.api)
+    expect(await item.service.restoreSession()).toMatchObject({ phase: 'signed-out', account: null })
+    expect(saved.saved()).toEqual(credential); expect(item.fetcher).toHaveBeenCalledOnce()
+    expect(JSON.stringify(item.service.status())).not.toContain('CANARY')
   })
 })

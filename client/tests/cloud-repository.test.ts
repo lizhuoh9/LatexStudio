@@ -43,7 +43,7 @@ async function folder(): Promise<string> {
 async function session() {
   let clock = 100000
   const server = { profile: { id: 123, login: 'lab-user', name: 'Lab User' },
-    list: { total_count: 1, repositories: [repo()] },
+    list: [repo()],
     detail: { ...repo(), default_branch: 'main', permissions: { push: true, admin: false } },
     git: null as ((init?: RequestInit) => Promise<Response>) | null }
   const extra = new Map<string, typeof server.detail>()
@@ -52,8 +52,7 @@ async function session() {
     if (url.pathname === '/login/device/code') return json({ device_code: 'a'.repeat(40), user_code: 'ABCD-EFGH', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })
     if (url.pathname === '/login/oauth/access_token') return json({ access_token: token, token_type: 'bearer', expires_in: 3600 })
     if (url.href === 'https://api.github.com/user') return json(server.profile)
-    if (url.pathname === '/user/installations') return json({ total_count: 1, installations: [{ id: 17 }] })
-    if (url.pathname === '/user/installations/17/repositories') return json(server.list)
+    if (url.pathname === '/user/repos') return json(server.list)
     if (url.pathname === '/repos/lab-team/paper') return json(server.detail)
     if (extra.has(url.pathname)) return json(extra.get(url.pathname))
     if (url.origin === 'https://github.com' && (url.pathname.startsWith('/lab-team/paper.git/') ||
@@ -79,7 +78,7 @@ async function connected() {
 async function connectedPair() {
   const { account, server, fetcher, extra } = await session()
   const second = { ...repo(), id: 84, name: 'paper-b' }
-  server.list.total_count = 2; server.list.repositories.push(second)
+  server.list.push(second)
   extra.set('/repos/lab-team/paper-b', { ...second, default_branch: 'main', permissions: { push: true, admin: false } })
   const vaultPath = join(await folder(), 'vault.json'), vault = new CredentialVault(vaultPath)
   for (const key of ['load', 'save', 'remove'] as const) vi.spyOn(vault, key).mockRejectedValue(new Error(`Vault.${key} forbidden`))
@@ -195,9 +194,9 @@ it.each(['account', 'branch', 'project', 'permissions', 'private', 'origin'])('r
   await writeFile(join(root, 'main.tex'), 'retained before authorization failure')
   if (drift === 'account') server.profile.id = 124
   if (drift === 'branch') server.detail.default_branch = 'other'
-  if (drift === 'project') { server.list.repositories[0]!.id = 43; server.detail.id = 43 }
+  if (drift === 'project') { server.list[0]!.id = 43; server.detail.id = 43 }
   if (drift === 'permissions') server.detail.permissions.push = false
-  if (drift === 'private') { server.detail.private = false; server.list.repositories[0]!.private = false }
+  if (drift === 'private') { server.detail.private = false; server.list[0]!.private = false }
   if (drift === 'origin') await git.setConfig({ fs, dir: root, path: 'remote.origin.url', value: 'https://github.com/other/paper.git' })
   const fetch = vi.spyOn(git, 'fetch'), push = vi.spyOn(git, 'push')
   await expect(cloud.sync('retain drift recovery')).rejects.toThrow()

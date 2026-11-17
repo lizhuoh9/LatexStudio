@@ -50,12 +50,12 @@ function json(value: unknown): Response {
 function repo(extra: Record<string, unknown> = {}) {
   return { id: 42, name: 'paper', private: true, owner: { login: 'lab-team' }, ...extra }
 }
-interface Server { profile: unknown; installations: unknown; repositories: unknown; detail: unknown }
+interface Server { profile: unknown; repositories: unknown; detail: unknown }
 type FetchHook = (url: URL, init?: RequestInit) => Response | Promise<Response> | undefined
 function fixture(hook?: FetchHook) {
   let clock = 100000
-  const server: Server = { profile: user, installations: { total_count: 1, installations: [{ id: 17 }] },
-    repositories: { total_count: 1, repositories: [repo()] }, detail: { ...repo(), default_branch: 'papers/default' } }
+  const server: Server = { profile: user,
+    repositories: [repo()], detail: { ...repo(), default_branch: 'papers/default' } }
   const reply = (value: unknown) => value instanceof Response ? value : json(value)
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input))
@@ -64,8 +64,7 @@ function fixture(hook?: FetchHook) {
     if (url.href === 'https://github.com/login/device/code') return json(device)
     if (url.href === 'https://github.com/login/oauth/access_token') return json({ access_token: token, token_type: 'bearer', expires_in: 300, refresh_token: 'ignored-refresh-secret' })
     if (url.href === 'https://api.github.com/user') return reply(server.profile)
-    if (url.pathname === '/user/installations') return reply(server.installations)
-    if (/^\/user\/installations\/[0-9]+\/repositories$/.test(url.pathname)) return reply(server.repositories)
+    if (url.pathname === '/user/repos') return reply(server.repositories)
     if (url.origin === 'https://api.github.com' && url.pathname.startsWith('/repos/lab-team/')) return reply(server.detail)
     if (url.origin === 'https://github.com' && url.pathname.startsWith('/lab-team/')) return new Response('git-pack')
     throw new Error('Unexpected synthetic endpoint')
@@ -121,7 +120,7 @@ it('refreshes exact authorization before publishing a frozen metadata-only capab
   const value = await service.withProjectAccess(42, async lease => {
     expect(Object.keys(lease).sort()).toEqual(['account', 'branch', 'check', 'http', 'project', 'signal', 'target'])
     for (const item of [lease, lease.project, lease.account, lease.target, lease.http]) expect(Object.isFrozen(item)).toBe(true)
-    expect(lease.project).toEqual({ id: 42, installationId: 17, owner: 'lab-team', name: 'paper', private: true })
+    expect(lease.project).toEqual({ id: 42, installationId: 0, owner: 'lab-team', name: 'paper', private: true })
     expect(lease.account).toEqual({ id: 123, login: 'lab-user', name: 'Lab User' })
     expect(lease.target.url).toBe('https://github.com/lab-team/paper.git')
     expect(lease.branch).toBe('papers/default')
@@ -130,8 +129,8 @@ it('refreshes exact authorization before publishing a frozen metadata-only capab
   })
   for (const secret of [token, 'ignored-refresh-secret', user.email]) expect(value).not.toContain(secret)
   expect(fetcher.mock.calls.slice(3).map(([url]) => String(url))).toEqual(['https://api.github.com/user',
-    'https://api.github.com/user/installations?per_page=50&page=1',
-    'https://api.github.com/user/installations/17/repositories?per_page=50&page=1', 'https://api.github.com/repos/lab-team/paper'])
+    'https://api.github.com/user/repos?per_page=50&page=1&visibility=private&affiliation=owner,collaborator,organization_member&sort=full_name',
+    'https://api.github.com/repos/lab-team/paper'])
   expect(audit.created).toHaveLength(1)
   expect(audit.created[0]?.readOnly).toBe(true)
   expect(audit.closed).toHaveBeenCalledTimes(1)
@@ -180,7 +179,7 @@ it('revokes retained HTTP and check after actual callback completion', async () 
 
 it('keeps an actual repository name ending in .git distinct from a transport suffix', async () => {
   const { service, server, fetcher } = await signedIn()
-  server.repositories = { total_count: 1, repositories: [repo({ name: 'paper.git' })] }
+  server.repositories = [repo({ name: 'paper.git' })]
   server.detail = { ...repo({ name: 'paper.git' }), default_branch: 'main' }
   await service.withProjectAccess(42, async lease => {
     expect(lease.target).toEqual({ owner: 'lab-team', repository: 'paper.git', url: 'https://github.com/lab-team/paper.git.git' })
@@ -230,13 +229,13 @@ it.each([{ id: 999 }, { login: 'other-user' }])('requires fresh profile identity
 })
 
 it.each([
-  { total_count: 0, repositories: [] },
-  { total_count: 2, repositories: [repo(), repo()] },
-  { total_count: 501, repositories: [] },
-  { total_count: 1, repositories: [repo({ owner: { login: '../escape' } })] },
-  { total_count: 1, repositories: [repo({ name: '../escape' })] },
-  { total_count: 1, repositories: [repo({ private: 'true' })] },
-])('requires a complete safe bounded installation intersection: %j', async repositories => {
+  [],
+  [repo(), repo()],
+  Array.from({ length: 51 }, (_, index) => repo({ id: index + 1 })),
+  [repo({ owner: { login: '../escape' } })],
+  [repo({ name: '../escape' })],
+  [repo({ private: 'true' })],
+])('requires a complete safe bounded repository listing: %j', async repositories => {
   const { service, server } = await signedIn()
   server.repositories = repositories
   const callback = vi.fn(async () => 42)
@@ -266,15 +265,14 @@ it('invalidates this device session immediately on a fresh metadata 401 without 
   expect(audit.created).toHaveLength(0)
 })
 
-it.each(['unchanged', 'name', 'privacy', 'installation'] as const)('binds an optional private project snapshot, including %s', async field => {
+it.each(['unchanged', 'name', 'privacy'] as const)('binds an optional private project snapshot, including %s', async field => {
   const { service, server } = await signedIn()
   const listed = await service.projects()
   const first = listed[0]
   if (!first) throw new Error('Expected one validated fixture project')
   first.name = 'external-copy-mutation'
-  if (field === 'name') server.repositories = { total_count: 1, repositories: [repo({ name: 'renamed' })] }
-  if (field === 'privacy') server.repositories = { total_count: 1, repositories: [repo({ private: false })] }
-  if (field === 'installation') server.installations = { total_count: 1, installations: [{ id: 19 }] }
+  if (field === 'name') server.repositories = [repo({ name: 'renamed' })]
+  if (field === 'privacy') server.repositories = [repo({ private: false })]
   const callback = vi.fn(async () => 42)
   if (field === 'unchanged') {
     expect(await service.withProjectAccess(42, callback)).toBe(42)
@@ -291,7 +289,7 @@ it('clears previous selection metadata on a generation change while retaining a 
   await service.projects()
   await service.cancelAndWait()
   expect(service.status().phase).toBe('signed-in')
-  server.repositories = { total_count: 1, repositories: [repo({ name: 'new-name' })] }
+  server.repositories = [repo({ name: 'new-name' })]
   server.detail = { ...repo({ name: 'new-name' }), default_branch: 'main' }
   expect(await service.withProjectAccess(42, async lease => lease.project.name)).toBe('new-name')
 })

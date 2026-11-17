@@ -60,7 +60,7 @@ export class CollaborationTransport {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
   device(clientId: string, signal: AbortSignal): Promise<unknown> {
-    return this.post('https://github.com/login/device/code', { client_id: clientId }, signal)
+    return this.post('https://github.com/login/device/code', { client_id: clientId, scope: 'repo' }, signal)
   }
   poll(clientId: string, deviceCode: string, signal: AbortSignal): Promise<unknown> {
     return this.post('https://github.com/login/oauth/access_token', { client_id: clientId, device_code: deviceCode,
@@ -75,11 +75,8 @@ export class CollaborationTransport {
   profile(token: string, signal: AbortSignal): Promise<unknown> {
     return this.get('/user', token, signal)
   }
-  installations(page: number, token: string, signal: AbortSignal): Promise<unknown> {
-    return this.get(`/user/installations?per_page=${PAGE_SIZE}&page=${page}`, token, signal)
-  }
-  repositories(installationId: number, page: number, token: string, signal: AbortSignal): Promise<unknown> {
-    return this.get(`/user/installations/${installationId}/repositories?per_page=${PAGE_SIZE}&page=${page}`, token, signal)
+  userRepositories(page: number, token: string, signal: AbortSignal): Promise<unknown> {
+    return this.get(`/user/repos?per_page=${PAGE_SIZE}&page=${integer(page, 100)}&visibility=private&affiliation=owner,collaborator,organization_member&sort=full_name`, token, signal)
   }
 
   repository(owner: string, name: string, token: string, signal: AbortSignal): Promise<unknown> {
