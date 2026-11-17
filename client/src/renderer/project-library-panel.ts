@@ -27,7 +27,7 @@ const TEMPLATE = `<header class="pl-heading"><h2 id="project-library-heading">�
   <input id="project-library-search" type="search" aria-label="搜索项目名称" placeholder="搜索项目" autocomplete="off" spellcheck="false">
   <button id="project-library-refresh" type="button" aria-label="刷新项目列表" title="刷新项目列表">刷新</button></div></header>
   <p id="project-library-cloud" role="status" aria-live="polite" hidden></p>
-  <div class="pl-columns" aria-hidden="true"><span>项目名称</span><span>存储位置</span><span>最后修改</span><span></span></div>
+  <div class="pl-columns" aria-hidden="true"><div class="pl-columns-main"><span>项目名称</span><span>存储位置</span><span>最后修改</span></div><span>操作</span></div>
   <ul id="project-library-list" aria-label="全部项目"></ul>
   <p id="project-library-status" role="status" aria-live="polite"></p>`
 
@@ -265,18 +265,21 @@ export class ProjectLibraryPanel {
   private cloudRow(paper: CloudPaper, locked: boolean): HTMLLIElement {
     const row = document.createElement('li'), cell = document.createElement('div'), name = document.createElement('span')
     const badge = document.createElement('span'), download = document.createElement('button'), note = document.createElement('small')
+    const modified = document.createElement('span')
     row.className = 'pl-project is-cloud'; cell.className = 'pl-open pl-cloud'
     name.className = 'pl-name'; name.textContent = `${paper.owner}/${paper.name}`
     badge.className = 'pl-badge'; badge.setAttribute('data-kind', 'cloud'); uiText(badge, '云端')
     uiAttribute(badge, 'title', '此项目只在云端，尚未下载到这台电脑')
-    download.type = 'button'; download.className = 'pl-download'; uiText(download, '下载到本地')
+    // Same four cells as a local row. A cloud-only paper has no local files, so its modified time is not known here.
+    modified.className = 'pl-modified'; modified.textContent = '—'; modified.setAttribute('aria-hidden', 'true')
+    download.type = 'button'; download.className = 'pl-download'; uiText(download, '下载'); uiAttribute(download, 'title', '下载到本地')
     uiAttribute(download, 'aria-label', `下载 ${paper.owner}/${paper.name} 到本地`)
     download.disabled = locked || !this.cloud?.signedIn()
     // A local project whose link could not be read may be this very paper: say so instead of claiming it is absent.
     note.className = 'pl-note'; uiText(note, this.state.projects.some(entry => entry.syncIssue) ? '可能已在本机' : '尚未下载')
     this.listen(download, () => { if (!download.disabled && !this.disposed && !this.closing) this.cloud?.download(paper) })
-    cell.append(name, badge, download, note)
-    row.append(cell, document.createElement('span'))
+    cell.append(name, badge, modified, note)
+    row.append(cell, download) // the action column, where a local row has its remove button
     return row
   }
 

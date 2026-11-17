@@ -230,6 +230,7 @@ export const UI_TRANSLATIONS = [
   ['刷新项目列表', 'Refresh project list', '프로젝트 목록 새로 고침'],
   ['存储位置', 'Location', '저장 위치'],
   ['最后修改', 'Last modified', '마지막 수정'],
+  ['操作', 'Actions', '작업'],
   ['没有匹配的项目', 'No matching projects', '일치하는 프로젝트 없음'],
   ['尚无项目', 'No projects yet', '아직 프로젝트 없음'],
   ['未知', 'Unknown', '알 수 없음'],

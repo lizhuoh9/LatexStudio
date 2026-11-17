@@ -278,9 +278,15 @@ it('shows local-only, linked and cloud-only papers together and says which can b
   expect(button('Paper b').children[1]!.textContent).toBe('本地'); expect(button('Paper b').children[3]!.textContent).toBe('未上传到云端')
   const row = button('lab/thesis')
   expect(row.children[1]!.textContent).toBe('云端'); expect(row.children[1]!.attributes.get('data-kind')).toBe('cloud')
-  expect(row.children[3]!.textContent).toBe('尚未下载'); expect(row.children[2]!.textContent).toBe('下载到本地')
+  expect(row.children[3]!.textContent).toBe('尚未下载'); expect(row.children).toHaveLength(4)
+  // The "last modified" column of a cloud-only paper holds no action: its time is unknown until it is downloaded.
+  expect(row.children[2]!.className).toBe('pl-modified'); expect(row.children[2]!.textContent).toBe('—')
+  expect(row.children[2]!.attributes.get('aria-hidden')).toBe('true')
+  const download = button('lab/thesis', 1)
+  expect(download.className).toBe('pl-download'); expect(download.textContent).toBe('下载'); expect(download.title).toBe('下载到本地')
+  expect(download.attributes.get('aria-label')).toBe('下载 lab/thesis 到本地')
   expect(get('project-library-cloud').textContent).toBe('本机 2 篇，其中 1 篇已关联云端、可同步；另有 1 篇只在云端，可下载到本地。')
-  expect(cloud.download).not.toHaveBeenCalled(); row.children[2]!.click()
+  expect(cloud.download).not.toHaveBeenCalled(); download.click()
   expect(cloud.download).toHaveBeenCalledExactlyOnceWith({ owner: 'lab', name: 'thesis' })
   expect(api.activate).not.toHaveBeenCalled(); expect(documents.save).not.toHaveBeenCalled()
 })
@@ -320,9 +326,38 @@ it('filters cloud-only papers with the same search and locks their download whil
   get('project-library-search').input('  THESIS '); expect(names()).toEqual(['lab/thesis'])
   get('project-library-search').input('zzz'); expect(get('project-library-list').children[0]!.className).toBe('pl-empty')
   get('project-library-search').input(''); expect(names()).toEqual(['Paper a', 'Paper b', 'lab/thesis', 'lab/notes'])
-  panel.setClosing(true); expect(button('lab/thesis').children[2]!.disabled).toBe(true)
-  panel.setClosing(false); await settle(); const download = button('lab/notes').children[2]!; expect(download.disabled).toBe(false)
+  panel.setClosing(true); expect(button('lab/thesis', 1).disabled).toBe(true)
+  panel.setClosing(false); await settle(); const download = button('lab/notes', 1); expect(download.disabled).toBe(false)
   panel.dispose(); download.click(); expect(cloud.download).not.toHaveBeenCalled()
+})
+it('puts every row action in its own column so local and cloud rows share one column layout', async () => {
+  const cloud = cloudProvider([{ owner: 'lab', name: 'thesis' }]); makeWithCloud(cloud); await settle()
+  const markup = get('project-library').innerHTML
+  expect(markup).toContain('<div class="pl-columns-main"><span>项目名称</span><span>存储位置</span><span>最后修改</span></div><span>操作</span>')
+  const rows = get('project-library-list').children
+  expect(rows.map(row => row.children.map(node => node.className))).toEqual([['pl-open', 'pl-forget'], ['pl-open', 'pl-forget'], ['pl-open pl-cloud', 'pl-download']])
+  for (const row of rows) expect(row.children[0]!.children.map(node => node.className)).toEqual(['pl-name', 'pl-badge', 'pl-modified', 'pl-note'])
+  for (const locale of ['en', 'ko'] as const) expect(translate('操作', locale)).not.toMatch(/[㐀-鿿]/)
+})
+it('gives the header and the rows the same column tracks and centres the status, time and action columns', () => {
+  const css = readFileSync('src/renderer/project-library-style.css', 'utf8')
+  const rule = (selector: string): string => {
+    const start = css.indexOf(`\n${selector} {`)
+    expect(start, selector).toBeGreaterThanOrEqual(0)
+    return css.slice(start, css.indexOf('}', start))
+  }
+  const outer = 'grid-template-columns: minmax(0,1fr) var(--pl-action); column-gap: 10px;'
+  expect(rule('#project-library .pl-columns')).toContain(outer); expect(rule('#project-library .pl-project')).toContain(outer)
+  const inner = 'grid-template-columns: var(--pl-columns); column-gap: 12px;'
+  expect(rule('#project-library .pl-columns-main')).toContain(inner); expect(rule('#project-library .pl-open')).toContain(inner)
+  // Row: 1px border + 6px padding on the right, 1px border on the left; the header mirrors both with padding.
+  expect(rule('#project-library .pl-project')).toContain('padding-right: 6px;'); expect(rule('#project-library .pl-project')).toContain('border: 1px solid')
+  expect(rule('#project-library .pl-columns')).toContain('padding: 8px 7px 10px 1px;')
+  expect(rule('#project-library .pl-columns-main')).toContain('padding-inline: 18px;'); expect(rule('#project-library .pl-open')).toContain('padding: 14px 18px;')
+  expect(rule('#project-library .pl-columns-main > span + span, #project-library .pl-columns > span')).toContain('text-align: center;')
+  expect(rule('#project-library .pl-open > .pl-badge')).toContain('justify-self: center;')
+  expect(rule('#project-library .pl-note')).toContain('text-align: center;'); expect(rule('#project-library .pl-modified')).toContain('text-align: center;')
+  expect(rule('#project-library .pl-download')).toContain('justify-self: center;'); expect(rule('#project-library .pl-forget')).toContain('justify-self: center;')
 })
 it('explains the cloud states in all three languages and keeps the legacy panel free of cloud reads', async () => {
   make(); await settle(); expect(get('project-library-cloud').hidden).toBe(true)
