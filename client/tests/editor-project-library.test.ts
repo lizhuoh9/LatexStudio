@@ -337,7 +337,12 @@ it('puts every row action in its own column so local and cloud rows share one co
   const rows = get('project-library-list').children
   expect(rows.map(row => row.children.map(node => node.className))).toEqual([['pl-open', 'pl-forget'], ['pl-open', 'pl-forget'], ['pl-open pl-cloud', 'pl-download']])
   for (const row of rows) expect(row.children[0]!.children.map(node => node.className)).toEqual(['pl-name', 'pl-badge', 'pl-modified', 'pl-note'])
-  for (const locale of ['en', 'ko'] as const) expect(translate('操作', locale)).not.toMatch(/[㐀-鿿]/)
+  for (const locale of ['en', 'ko'] as const) for (const text of ['操作', '移出']) expect(translate(text, locale), text).not.toMatch(/[㐀-鿿]/)
+  // A worded button, not a bare "×": it only removes the entry from this list and never deletes files.
+  const forget = button('Paper b', 1)
+  expect(forget.textContent).toBe('移出'); expect(forget.title).toBe('移出列表，不删除硬盘文件')
+  expect(forget.attributes.get('aria-label')).toBe('从列表移出 Paper b，不删除文件')
+  expect(button('Paper a', 1).textContent).toBe('移出'); expect(button('Paper a', 1).disabled).toBe(true) // the current project
 })
 it('gives the header and the rows the same column tracks and centres the status, time and action columns', () => {
   const css = readFileSync('src/renderer/project-library-style.css', 'utf8')
@@ -357,7 +362,10 @@ it('gives the header and the rows the same column tracks and centres the status,
   expect(rule('#project-library .pl-columns-main > span + span, #project-library .pl-columns > span')).toContain('text-align: center;')
   expect(rule('#project-library .pl-open > .pl-badge')).toContain('justify-self: center;')
   expect(rule('#project-library .pl-note')).toContain('text-align: center;'); expect(rule('#project-library .pl-modified')).toContain('text-align: center;')
-  expect(rule('#project-library .pl-download')).toContain('justify-self: center;'); expect(rule('#project-library .pl-forget')).toContain('justify-self: center;')
+  // Both row actions are the same worded button shape; only their colours differ.
+  const action = rule('#project-library .pl-forget, #project-library .pl-download')
+  for (const part of ['align-self: center;', 'justify-self: center;', 'min-height: 30px;', 'padding: 5px 14px;', 'border-radius: 8px;', 'font-size: 12px;']) expect(action).toContain(part)
+  expect(css).not.toContain('\n#project-library .pl-forget {') // no separate icon-sized rule for the remove button
 })
 it('explains the cloud states in all three languages and keeps the legacy panel free of cloud reads', async () => {
   make(); await settle(); expect(get('project-library-cloud').hidden).toBe(true)

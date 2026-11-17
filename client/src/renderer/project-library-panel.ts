@@ -318,7 +318,7 @@ export class ProjectLibraryPanel {
       else this.dispatch('切换本地项目', ticket => this.activate(entry.id, ticket))
     })
     const forget = document.createElement('button')
-    forget.type = 'button'; forget.className = 'pl-forget'; forget.textContent = '×'; forget.disabled = locked || active || entry.id === this.state.activeId
+    forget.type = 'button'; forget.className = 'pl-forget'; uiText(forget, '移出'); forget.disabled = locked || active || entry.id === this.state.activeId
     uiAttribute(forget, 'title', active ? '当前项目不能移出列表' : '移出列表，不删除硬盘文件')
     uiAttribute(forget, 'aria-label', `从列表移出 ${entry.name}，不删除文件`)
     this.listen(forget, () => { if (!forget.disabled) this.dispatch('移出项目入口', ticket => this.forget(entry, ticket)) })

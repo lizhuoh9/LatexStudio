@@ -252,6 +252,7 @@ export const UI_TRANSLATIONS = [
   ['正在读取云端论文…', 'Loading cloud papers…', '클라우드 논문을 불러오는 중…'],
   ['登录 GitHub 后，这里会同时显示你在云端的论文。', 'After you sign in to GitHub, your cloud papers are shown here as well.', 'GitHub에 로그인하면 클라우드에 있는 논문도 여기에 함께 표시됩니다.'],
   ['当前项目不能移出列表', 'The current project cannot be removed from the list', '현재 프로젝트는 목록에서 제거할 수 없음'],
+  ['移出', 'Remove', '제거'],
   ['移出列表，不删除硬盘文件', 'Remove from list without deleting files', '파일을 삭제하지 않고 목록에서 제거'],
   ['关联', 'Link', '연결'],
   ['下载项目', 'Download project', '프로젝트 다운로드'],
