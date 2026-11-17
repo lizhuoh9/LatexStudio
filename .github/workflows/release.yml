@@ -39,7 +39,7 @@ jobs:
         name: Windows fixed offline resources and unsigned NSIS/portable
         run: npm run dist:win -- --publish never
       - if: runner.os == 'macOS'
-        name: Native Mac editing test zip (ad-hoc, no notarization or TeX)
+        name: Apple Silicon Mac editing test DMG (ad-hoc, no notarization or TeX)
         run: npm run dist:mac:test
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -56,7 +56,7 @@ jobs:
           name: mac-editing-test
           if-no-files-found: error
           path: |
-            client/release/macos-test/LatexStudio-*.zip
+            client/release/macos-test/LatexStudio-*.dmg
             client/release/macos-test/latest*.yml
   publish:
     needs: build
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           git archive --format=zip --output="downloads/LatexStudio-${GITHUB_REF_NAME}-source.zip" HEAD
-          (cd downloads; shopt -s nullglob; files=(*.exe *.zip *.yml *.blockmap); sha256sum -- "${files[@]}" > SHA256SUMS)
+          (cd downloads; shopt -s nullglob; files=(*.exe *.dmg *.zip *.yml *.blockmap); sha256sum -- "${files[@]}" > SHA256SUMS)
       - name: Publish immutable version (no silent replacement)
         env:
           GH_TOKEN: ${{ github.token }}

@@ -71,6 +71,7 @@ class Workbench {
   private sharing: SharingPanel | null = null
   private cloud: CloudProjectPanel
   private library: ProjectLibraryPanel
+  private libraryAccountId: number | null = null
   private repositoryTransfer: RepositoryTransferPanel
   private updates: UpdatePanel
   private language: LocalePanel
@@ -100,7 +101,7 @@ class Workbench {
     const setupApi = (window as Window & { paperstudioSetup?: TexSetupApi }).paperstudioSetup
     this.setup = new SetupPanel(setupApi, () => this.setupChanged())
     const collaborationApi = (window as Window & { paperstudioCollaboration?: CollaborationApi }).paperstudioCollaboration
-    this.collaboration = new CollaborationPanel(collaborationApi, undefined, () => { this.startup?.update(); this.account?.update(); this.sharing?.accountChanged() })
+    this.collaboration = new CollaborationPanel(collaborationApi, undefined, () => { this.startup?.update(); this.account?.update(); this.sharing?.accountChanged(); this.syncLibraryAccount() })
     this.account = new AccountMenu(this.collaboration.model, () => {
       if (!this.closing) element<HTMLDialogElement>('cloud-dialog').showModal()
     })
@@ -117,11 +118,28 @@ class Workbench {
     const unsubscribeCloud = collaborationApi?.onState(() => { void this.cloud.refresh() })
     const projectApi = (window as Window & { paperstudioProjects?: ProjectLibraryApi }).paperstudioProjects
     this.library = new ProjectLibraryPanel(projectApi, this.documents, this.dialogs, this.run,
-      project => this.adopt(project), message => this.notify(message), () => this.showEditor())
+      project => this.adopt(project), message => this.notify(message), () => this.showEditor(), cloudApi && {
+        // Home page only: which of the signed-in account's private papers are not on this computer yet.
+        signedIn: () => !!this.collaboration.model.account,
+        visible: () => document.body.dataset.page === 'home' && !this.busy && !this.closing && !document.querySelector('dialog[open]'),
+        // Main serializes this read with every other action, so it runs as one ordinary action and never overlaps one.
+        list: () => new Promise((resolve, reject) => {
+          if (this.busy || this.closing) { resolve(null); return }
+          this.run('读取云端论文', async () => {
+            try { resolve((await cloudApi.projects()).map(choice => ({ owner: choice.project.owner, name: choice.project.name }))) }
+            catch (error) { reject(error) }
+          })
+        }),
+        download: paper => { if (!this.busy && !this.closing) this.sharing?.downloadFrom(`https://github.com/${paper.owner}/${paper.name}`) }
+      })
     this.repositoryTransfer = new RepositoryTransferPanel(api)
     this.updates = new UpdatePanel((window as Window & { paperstudioUpdates?: UpdateApi }).paperstudioUpdates)
     this.language = new LocalePanel()
+    // A login or startup dialog can cover the home page while the account becomes known; read the cloud list once it closes.
+    const dialogClosed = (): void => queueMicrotask(() => this.library.resumeCloud())
+    document.addEventListener('close', dialogClosed, true)
     window.addEventListener('unload', () => {
+      document.removeEventListener('close', dialogClosed, true)
       this.language.dispose()
       this.sharing?.dispose()
       this.editor.destroy()
@@ -181,6 +199,7 @@ class Workbench {
       this.flushExternal()
       if (freeze || ['保存文件', '新建文件', '另存副本', '本机编译', '检查本地文件变化'].includes(label)) this.sync.refreshVisible()
       this.sharing?.flushPending()
+      queueMicrotask(() => this.library?.resumeCloud()) // a cloud list that had to wait for this action is read now
     }
   }
 
@@ -272,6 +291,15 @@ class Workbench {
     this.sync.projectChanged()
     this.layout.showHome()
     void this.library.refresh()
+    this.library.resumeCloud()
+  }
+
+  /** The collaboration state callback fires for every progress message; the home list only cares about the account. */
+  private syncLibraryAccount(): void {
+    const id = this.collaboration?.model.account?.id ?? null
+    if (id === this.libraryAccountId) return
+    this.libraryAccountId = id
+    this.library?.accountChanged()
   }
 
   private showEditor(): void {

@@ -1,4 +1,4 @@
-# LatexStudio 0.4.5 客户端
+# LatexStudio 0.4.6 客户端
 
 普通用户通过桌面 LatexStudio 快捷方式或已安装的应用启动；界面语言可在右上角账号菜单的“语言”中选择简体中文、English 或 한국어，切换即时生效并保留到下次启动。无需运行下面的开发命令。语言范围与数据保护见[界面语言说明](<../docs/INTERFACE-LANGUAGES.md>)。首次启动在后台用内置资源自动离线配置、校验；期间可编辑保存，不弹出下载或组件选择。
 
@@ -19,7 +19,7 @@ npm start
 
 - `npm run prepare:tex-runtime`：构建者获取／校验固定 Windows 组件；不是普通用户步骤。脚本与固定资源映射见[当前 package](<package.json>)。
 - `npm run dist:win`：先校验内置组件，再构建 NSIS 与 portable；当前未配置受信签名。
-- `npm run dist:mac:test`：仅在真实 Mac 上检查并生成当前原生架构的 ad-hoc 编辑测试 ZIP，输出 `release/macos-test`；不发布、不配置 TeX、不等于正式签名／公证。
+- `npm run dist:mac:test`：仅在真实 Mac 上检查并生成当前原生架构的 ad-hoc 编辑测试 DMG（不再生成应用 ZIP），输出 `release/macos-test`；发布流水线的构建机是 Apple 芯片，发布页只提供 Apple 芯片 DMG，不提供 Intel 版；不发布、不配置 TeX、不等于正式签名／公证。
 - `npm run test:mac-contracts`：可在 Windows 运行的 Mac 菜单、编译禁用、打包配置和编辑契约测试，不冒充真实 Mac 验收。Mac 交接见[操作说明](<../Mac测试说明.md>)与[双击构建入口](<../在Mac上构建测试版.command>)。
 - `npm run test:offline-native`：显式原生验收，需要 `PAPERSTUDIO_OFFLINE_NATIVE=1`；使用独立空配置、禁网、真实 Main／AppContainer／PDF／BibTeX／中文，不在默认测试或构建中偷偷启用。
 - `npm run test:versions-ui`：真实构建的保存／差异／单文件回退验证。

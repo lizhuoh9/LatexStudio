@@ -2,10 +2,13 @@
 const fs = require('node:fs'), path = require('node:path'), { spawnSync } = require('node:child_process')
 const { createHash } = require('node:crypto')
 const root = path.resolve(__dirname, '..')
+/** Must stay in step with `artifactName` in electron-builder.mac-test.cjs and the link in docs/RELEASE-NOTES.md. */
+function artifactName(version, arch) { return `LatexStudio-${version}-mac-${arch}-test.dmg` }
+/** One DMG for the CPU of the Mac that runs the build. The release runner is Apple Silicon, so releases carry arm64 only. */
 function plan(platform = process.platform, arch = process.arch) {
   if (platform !== 'darwin') throw new Error('Mac test applications must be built on macOS; this Windows source kit is not an app/DMG.')
   if (!['arm64', 'x64'].includes(arch)) throw new Error('Only native arm64 or x64 Mac builds are supported.')
-  return { arch, builder: ['--mac', 'zip', '--' + arch, '--config', 'electron-builder.mac-test.cjs', '--publish', 'never'] }
+  return { arch, builder: ['--mac', 'dmg', '--' + arch, '--config', 'electron-builder.mac-test.cjs', '--publish', 'never'] }
 }
 function run(executable, args, env = process.env) {
   const result = spawnSync(executable, args, { cwd: root, env, stdio: 'inherit', shell: false })
@@ -40,10 +43,10 @@ async function main() {
   run(process.execPath, [bin('electron-vite'), 'build'], env)
   run(process.execPath, [bin('electron-builder'), ...build.builder], env)
   const { version } = require('../package.json'), output = path.join(root, 'release/macos-test')
-  const artifact = `LatexStudio-${version}-mac-${build.arch}-test.zip`
+  const artifact = artifactName(version, build.arch)
   const app = path.join(output, build.arch === 'arm64' ? 'mac-arm64' : 'mac', 'LatexStudio.app')
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], env)
-  const receipt = { kind: 'macos-editing-test-build-v1', version, platform: process.platform, arch: build.arch,
+  const receipt = { kind: 'macos-editing-test-build-v2', version, platform: process.platform, arch: build.arch, format: 'dmg',
     artifact, sha256: await sha256(path.join(output, artifact)), bytes: fs.statSync(path.join(output, artifact)).size,
     signing: 'ad-hoc; not Developer ID', notarized: false, guiTested: false, texCompilationEnabled: false,
     checks: ['source-audit', 'typecheck', 'editing-contract-tests', 'production-build', 'codesign-verify'], finishedAt: new Date().toISOString() }
@@ -52,5 +55,5 @@ async function main() {
   console.log('Mac editing-test artifact: ' + path.join(output, artifact))
   console.log('Ad-hoc build only. GUI/first launch remain untested; TeX compilation is not enabled.')
 }
-module.exports = { plan }
+module.exports = { plan, artifactName }
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1 })

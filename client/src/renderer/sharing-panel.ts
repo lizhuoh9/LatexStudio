@@ -75,6 +75,10 @@ export class SharingPanel {
       dialog.addEventListener('close', closed); dialog.addEventListener('cancel', cancel)
       this.cleanups.push(() => { dialog.removeEventListener('close', closed); dialog.removeEventListener('cancel', cancel) })
     }
+    // A login abandoned by closing the account dialog must not resume Share/Join on some later, unrelated login.
+    const account = element<HTMLDialogElement>('cloud-dialog'), abandoned = () => { if (!this.model.account) this.waitingLogin = null }
+    account.addEventListener('close', abandoned)
+    this.cleanups.push(() => account.removeEventListener('close', abandoned))
     const resumed = () => queueMicrotask(() => this.flushPending())
     document.addEventListener('close', resumed, true)
     this.cleanups.push(() => document.removeEventListener('close', resumed, true))
@@ -104,6 +108,13 @@ export class SharingPanel {
     this.dialog('join').showModal()
     this.renderJoin()
     element('join-link').focus()
+  }
+
+  /** The user chose "download" on one listed cloud paper: same dialog, guards and Main workflow as a pasted link. */
+  downloadFrom(link: string): void {
+    this.openJoin(link)
+    if (!this.dialog('join').open || element<HTMLInputElement>('join-link').value !== link || !this.target() || !this.model.account) return
+    this.action('join', () => this.download())
   }
 
   private receiveLink(value: string): void {

@@ -2,15 +2,20 @@
 
 ## 下载安装
 
-| Windows | macOS · M 系列芯片 |
+| Windows | macOS · Apple 芯片（M 系列） |
 | :---: | :---: |
-| [**Windows 64 位安装版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-win-x64-setup.exe) | [**Apple Silicon Mac 版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-mac-arm64-test.zip) |
+| [**Windows 64 位安装版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-win-x64-setup.exe) | [**Apple 芯片 Mac 版（DMG）**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-mac-arm64-test.dmg) |
 
-未签名开发版。Mac 版目前仅用于编辑测试，暂不支持本地 TeX 编译，未完成 Apple 公证。
+未签名开发版。Mac 版目前仅用于编辑测试，暂不支持本地 TeX 编译，未完成 Apple 公证；只提供 Apple 芯片版，不支持 Intel 芯片的 Mac。
+
+**Mac 安装与首次打开**：先在“苹果菜单 → 关于本机”确认芯片是 Apple M 系列。打开下载的 DMG，把 LatexStudio 拖到“应用程序”。因为未经 Apple 公证，第一次双击会被系统拦截：先点“完成”，再打开“系统设置 → 隐私与安全性”，在页面下方找到 LatexStudio 的提示并点“仍要打开”。之后可正常双击打开。
 
 <details>
 <summary>版本说明与开发者资料</summary>
 
+- 首页项目列表现在直接显示每篇论文的云端状态：登录后会列出账号下**尚未下载到这台电脑**的私有论文（标为“云端”），点“下载到本地”并选择空文件夹即可取回；本机论文标明“可同步”（已关联云端）或“未上传到云端”，列表上方汇总本机、已关联和仅在云端的数量。只读取项目名称等公开信息；下载和同步仍然只在你明确点击后发生，登录或打开首页不会自动下载、上传或同步。
+- Mac 版改为 **DMG 安装包**（Apple 芯片）：打开后把 LatexStudio 拖到“应用程序”。不再提供应用 ZIP，也不提供 Intel 芯片版；仍未经 Apple 公证，首次打开步骤见上方说明。
+- 修复从“分享”或“加入项目”窗口发起登录后又取消时，之后在别处登录会误弹出该窗口的问题。
 - 新增 LaTeX 源码 ↔ PDF **单词级双向双击跳转（SyncTeX）与醒目高亮**：`pdflatex` / `xelatex` 编译自动生成受限读取的 `.synctex.gz`（剥离构建临时目录，仅映射合法项目相对路径）；双击源码中单词可在 PDF 精准高亮对应词位置（高对比琥珀金定位框持续 3.5 秒），双击 PDF 中单词或位置可准确跳回并打开对应 `.tex` 文件、选中目标词并亮金色高亮提示 4.5 秒（不依赖外部工具）。
 - 优化 PDF 预览交互模式：**按住 `Ctrl / ⌘` 键**时启用滚轮缩放与左键抓手拖拽平移；**未按 `Ctrl`** 时支持直接拖拽划词复制（纯文本覆盖层，不启用 PDF 脚本、批注或外链）、普通滚动与双击跳转。
 - 统一源码编辑器工具栏 5 枚图标（撤销、重做、加粗、斜体、查找）为等尺寸线性 SVG 图形，消除原有字体/符号尺寸与粗细不均的问题。

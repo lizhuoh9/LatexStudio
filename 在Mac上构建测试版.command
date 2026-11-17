@@ -5,7 +5,7 @@ finish() {
   result=$?
   trap - EXIT
   if [ "$result" -eq 0 ]; then
-    printf '\n构建完成。请查看 client/release/macos-test 中的应用 ZIP 和 TEST-BUILD.json。\n'
+    printf '\n构建完成。请查看 client/release/macos-test 中的 DMG 和 TEST-BUILD.json。\n'
   else
     printf '\n未完成构建（退出码 %s）。请保留上方错误，不要把源码 ZIP 当成可运行应用。\n' "$result"
   fi

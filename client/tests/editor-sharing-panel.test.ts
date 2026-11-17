@@ -208,6 +208,29 @@ it('declares only the fixed project-link OS scheme in installer metadata', () =>
   const config = JSON.parse(readFileSync('package.json', 'utf8')) as { build: { protocols: unknown } }
   expect(config.build.protocols).toEqual([{ name: 'LatexStudio project links', schemes: ['latexstudio'] }])
 })
+it('forgets a login abandoned by closing the account dialog, so a later unrelated login opens nothing', async () => {
+  receiveAccount(null); const panel = make(); panel.openJoin(); await settle(); get('join-sign-in').click()
+  get('cloud-dialog').showModal(); get('cloud-dialog').close() // closed without signing in
+  receiveAccount(2); panel.accountChanged(); await settle()
+  expect(get('join-dialog').open).toBe(false); expect(api.joinProject).not.toHaveBeenCalled(); expect(api.projects).not.toHaveBeenCalled()
+})
+it('downloads one chosen cloud paper through the ordinary guarded join, only from that explicit request', async () => {
+  const panel = make(); panel.downloadFrom('https://github.com/alice/paper'); await settle()
+  expect(api.joinProject).toHaveBeenCalledExactlyOnceWith('latexstudio://join/alice/paper'); expect(get('join-repository').textContent).toBe('alice/paper')
+  expect(adopt).toHaveBeenCalledExactlyOnceWith(project('joined')); expect(get('join-dialog').open).toBe(false)
+  expect(api.projects).not.toHaveBeenCalled(); expect(api.downloadProject).not.toHaveBeenCalled(); expect(api.sync).not.toHaveBeenCalled()
+})
+it('does not start a chosen cloud download while signed out, busy, blocked by another dialog or for an invalid target', async () => {
+  const panel = make(); panel.downloadFrom('https://elsewhere.invalid/alice/paper'); await settle(); expect(api.joinProject).not.toHaveBeenCalled()
+  get('join-close').click(); get('cloud-dialog').showModal(); panel.downloadFrom('https://github.com/alice/paper'); await settle()
+  expect(get('join-dialog').open).toBe(false); expect(api.joinProject).not.toHaveBeenCalled(); get('cloud-dialog').close()
+  allowed = false; panel.downloadFrom('https://github.com/alice/paper'); await settle(); expect(api.joinProject).not.toHaveBeenCalled(); allowed = true
+  receiveAccount(null); panel.accountChanged(); panel.downloadFrom('https://github.com/alice/paper'); await settle()
+  expect(get('join-dialog').open).toBe(true); expect(get('join-status').textContent).toContain('登录'); expect(api.joinProject).not.toHaveBeenCalled()
+  Object.assign(documents.buffer, { dirty: true }); vi.mocked(documents.save).mockResolvedValue(false); receiveAccount(1); panel.accountChanged()
+  get('join-close').click(); panel.downloadFrom('https://github.com/alice/paper'); await settle()
+  expect(api.joinProject).not.toHaveBeenCalled(); expect(get('join-error').value).toContain('草稿已保留')
+})
 it('keeps all actions inert after dispose and does not acknowledge a late pending result', async () => {
   const initial = deferred<string | null>(); vi.mocked(links.pending).mockReturnValue(initial.promise)
   const panel = make(); panel.markReady(); panel.dispose(); initial.resolve('latexstudio://join/alice/paper'); emitLink('latexstudio://join/alice/paper'); await settle()

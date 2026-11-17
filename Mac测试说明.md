@@ -17,10 +17,10 @@
 3. 双击根目录的[在Mac上构建测试版.command](<在Mac上构建测试版.command>)。首次需要网络，通过锁文件安装开发依赖与固定版本 Electron；不需要 Python，不会自动安装 Xcode／TeX、访问论文、创建账号或发布文件。
 4. 脚本先执行入口审计、类型检查和编辑相关测试，再构建、打包并校验本地 ad-hoc 签名。失败会停下，保留终端错误；**没有在这台 Windows 上执行过这一步**。
 5. 成功后在 `client/release/macos-test` 查看：
-   - `LatexStudio-0.2.2-mac-arm64-test.zip` 或 `LatexStudio-0.2.2-mac-x64-test.zip`；
+   - `LatexStudio-<版本>-mac-arm64-test.dmg` 或 `LatexStudio-<版本>-mac-x64-test.dmg`（按本机芯片只生成一个；不再生成应用 ZIP）；
    - `TEST-BUILD.json`：当前架构、制品大小／摘要、检查项目和未实测标记；
-   - `SHA256SUMS`：生成的应用 ZIP 校验值。
-6. 解压应用 ZIP，可将其中的 `LatexStudio.app` 移到自己选择的位置再打开；不必使用终端启动应用。不要同时开源码预览和打包版，以免单实例锁使你误以为新包未启动。
+   - `SHA256SUMS`：生成的 DMG 校验值。
+6. 打开 DMG，把其中的 `LatexStudio.app` 拖到“应用程序”（或自己选择的位置）再打开；不必使用终端启动应用。不要同时开源码预览和打包版，以免单实例锁使你误以为新包未启动。
 
 这些是**开发测试产物**，只有本机 ad-hoc 签名，没有受信 Developer ID／Apple 公证，不能当正式安装包发给普通用户。
 测试版单独使用 Electron JIT 和 ad-hoc framework 所需的 entitlement，不包含 unsigned-executable-memory／调试权限；它不是正式发布权限方案，也不是 TeX 文件隔离。正式发布配置和正式验收门禁未改成通过。
@@ -46,6 +46,6 @@ Mac 应用自己的入口列表等配置位于当前用户的 `~/Library/Applica
 - [ ] 未保存时红色关闭按钮、⌘W、⌘Q 都弹出既有保护；取消后能继续编辑，确认后正常退出。
 - [ ] 重新启动保留项目入口，不擅自打开论文；关闭、重开后磁盘文字正确。
 
-记录 macOS 版本、芯片、Node 架构、应用 ZIP 摘要和实际报错／截图。Mac TeX、真实 GitHub账号、系统权限拒绝、外置卷及签名／公证另行验收，不因本轮编辑测试成功而视为已支持。
+记录 macOS 版本、芯片、Node 架构、DMG 摘要和实际报错／截图。Mac TeX、真实 GitHub账号、系统权限拒绝、外置卷及签名／公证另行验收，不因本轮编辑测试成功而视为已支持。
 
 高级维护说明见[Mac编译候选与发布门槛](<docs/MACOS.md>)；本次没有开放其中的原生候选编译路线。

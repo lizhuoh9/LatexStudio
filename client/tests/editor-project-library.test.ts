@@ -6,7 +6,8 @@ import type { ProjectInfo, WorkspaceApi } from '../src/shared/workspace-contract
 import { Documents } from '../src/renderer/documents'
 import type { Dialogs } from '../src/renderer/dialogs'
 import type { RunAction } from '../src/renderer/sync-panel'
-import { ProjectLibraryPanel } from '../src/renderer/project-library-panel'
+import { ProjectLibraryPanel, type CloudPapers } from '../src/renderer/project-library-panel'
+import { setLocale, translate } from '../src/shared/i18n'
 
 class NodeMock {
   id = ''; className = ''; textContent = ''; title = ''; type = ''; value = ''; dateTime = ''; disabled = false; hidden = false; markup = ''
@@ -258,6 +259,111 @@ it('shows per-project GitHub, local or issue badges as display-only metadata', a
   expect(button('Paper b').children[1]!.textContent).toBe('本地'); expect(button('Paper c').children[1]!.textContent).toBe('关联异常')
   expect(api.activate).not.toHaveBeenCalled()
 })
+function cloudProvider(papers: { owner: string; name: string }[] = []) {
+  const provider = { account: true, shown: true, signedIn: () => provider.account, visible: () => provider.shown,
+    list: vi.fn(async (): Promise<{ owner: string; name: string }[] | null> => papers), download: vi.fn() }
+  return provider
+}
+function makeWithCloud(cloud: CloudPapers): ProjectLibraryPanel {
+  const panel = new ProjectLibraryPanel(api, documents, dialogs, run, adopt, notify, resume, cloud)
+  panels.push(panel); panel.initialize(); return panel
+}
+const names = (): string[] => get('project-library-list').children.map(row => row.children[0]?.children[0]?.textContent ?? row.textContent)
+it('shows local-only, linked and cloud-only papers together and says which can be synced or downloaded', async () => {
+  state.projects = [{ ...entry('a'), github: { owner: 'lab', name: 'paper-a' } }, { ...entry('b'), github: null }]
+  const cloud = cloudProvider([{ owner: 'Lab', name: 'Paper-A' }, { owner: 'lab', name: 'thesis' }, { owner: 'lab', name: 'thesis' }])
+  makeWithCloud(cloud); await settle()
+  expect(cloud.list).toHaveBeenCalledOnce(); expect(names()).toEqual(['Paper a', 'Paper b', 'lab/thesis'])
+  expect(button('Paper a').children[1]!.textContent).toBe('GitHub'); expect(button('Paper a').children[3]!.textContent).toBe('可同步')
+  expect(button('Paper b').children[1]!.textContent).toBe('本地'); expect(button('Paper b').children[3]!.textContent).toBe('未上传到云端')
+  const row = button('lab/thesis')
+  expect(row.children[1]!.textContent).toBe('云端'); expect(row.children[1]!.attributes.get('data-kind')).toBe('cloud')
+  expect(row.children[3]!.textContent).toBe('尚未下载'); expect(row.children[2]!.textContent).toBe('下载到本地')
+  expect(get('project-library-cloud').textContent).toBe('本机 2 篇，其中 1 篇已关联云端、可同步；另有 1 篇只在云端，可下载到本地。')
+  expect(cloud.download).not.toHaveBeenCalled(); row.children[2]!.click()
+  expect(cloud.download).toHaveBeenCalledExactlyOnceWith({ owner: 'lab', name: 'thesis' })
+  expect(api.activate).not.toHaveBeenCalled(); expect(documents.save).not.toHaveBeenCalled()
+})
+it('reads the cloud list only for a signed-in visible home page, on explicit refresh or an account change, never on file notifications', async () => {
+  const cloud = cloudProvider([{ owner: 'lab', name: 'thesis' }]); cloud.account = false
+  const panel = makeWithCloud(cloud); await settle()
+  expect(cloud.list).not.toHaveBeenCalled(); expect(get('project-library-cloud').textContent).toContain('登录 GitHub 后')
+  expect(names()).toEqual(['Paper a', 'Paper b'])
+  cloud.account = true; cloud.shown = false; panel.accountChanged(); await settle(); expect(cloud.list).not.toHaveBeenCalled()
+  cloud.shown = true; await panel.refresh(true); await settle(); expect(cloud.list).toHaveBeenCalledOnce(); expect(names()).toContain('lab/thesis')
+  changed?.(); await settle(); await panel.refresh(); await settle(); expect(cloud.list).toHaveBeenCalledOnce(); expect(names()).toContain('lab/thesis')
+  get('project-library-refresh').click(); await settle(); expect(cloud.list).toHaveBeenCalledTimes(2)
+  panel.accountChanged(); await settle(); expect(cloud.list).toHaveBeenCalledTimes(3)
+  cloud.account = false; panel.accountChanged(); await settle()
+  expect(cloud.list).toHaveBeenCalledTimes(3); expect(names()).toEqual(['Paper a', 'Paper b'])
+})
+it('reads a deferred cloud list once the blocking dialog has closed, but never repeats a list that was already read', async () => {
+  const cloud = cloudProvider([{ owner: 'lab', name: 'thesis' }]); cloud.shown = false
+  const panel = makeWithCloud(cloud); await settle(); panel.accountChanged(); await settle(); expect(cloud.list).not.toHaveBeenCalled()
+  cloud.shown = true; panel.resumeCloud(); await settle(); expect(cloud.list).toHaveBeenCalledOnce(); expect(names()).toContain('lab/thesis')
+  panel.resumeCloud(); await settle(); expect(cloud.list).toHaveBeenCalledOnce()
+  cloud.account = false; panel.accountChanged(); panel.resumeCloud(); await settle(); expect(cloud.list).toHaveBeenCalledOnce()
+})
+it('keeps local projects usable when the cloud read fails, and ignores a result that arrives after sign-out', async () => {
+  const cloud = cloudProvider(); cloud.list.mockRejectedValueOnce(new Error('network diagnostic'))
+  const panel = makeWithCloud(cloud); await settle()
+  expect(get('project-library-cloud').textContent).toContain('云端论文读取失败'); expect(get('project-library-cloud').textContent).toContain('刷新')
+  expect(button('Paper b').disabled).toBe(false); expect(names()).toEqual(['Paper a', 'Paper b'])
+  const late = deferred<{ owner: string; name: string }[]>(); cloud.list.mockReturnValueOnce(late.promise)
+  get('project-library-refresh').click(); await flush(); expect(get('project-library-cloud').textContent).toContain('正在读取云端论文')
+  cloud.account = false; panel.accountChanged(); late.resolve([{ owner: 'lab', name: 'thesis' }]); await settle()
+  expect(names()).toEqual(['Paper a', 'Paper b']); expect(get('project-library-cloud').textContent).toContain('登录 GitHub 后')
+})
+it('filters cloud-only papers with the same search and locks their download while closing or after disposal', async () => {
+  const cloud = cloudProvider([{ owner: 'lab', name: 'thesis' }, { owner: 'lab', name: 'notes' }])
+  const panel = makeWithCloud(cloud); await settle()
+  get('project-library-search').input('  THESIS '); expect(names()).toEqual(['lab/thesis'])
+  get('project-library-search').input('zzz'); expect(get('project-library-list').children[0]!.className).toBe('pl-empty')
+  get('project-library-search').input(''); expect(names()).toEqual(['Paper a', 'Paper b', 'lab/thesis', 'lab/notes'])
+  panel.setClosing(true); expect(button('lab/thesis').children[2]!.disabled).toBe(true)
+  panel.setClosing(false); await settle(); const download = button('lab/notes').children[2]!; expect(download.disabled).toBe(false)
+  panel.dispose(); download.click(); expect(cloud.download).not.toHaveBeenCalled()
+})
+it('explains the cloud states in all three languages and keeps the legacy panel free of cloud reads', async () => {
+  make(); await settle(); expect(get('project-library-cloud').hidden).toBe(true)
+  for (const locale of ['en', 'ko'] as const) for (const text of ['云端', '可同步', '未上传到云端', '需检查关联', '尚未下载', '下载到本地', '正在读取云端论文…',
+    '登录 GitHub 后，这里会同时显示你在云端的论文。', '本机 2 篇，其中 1 篇已关联云端、可同步；另有 1 篇只在云端，可下载到本地。',
+    '云端论文读取失败：', '本地项目不受影响，可点“刷新”重试。', '下载 lab/thesis 到本地', '此项目只在云端，尚未下载到这台电脑',
+    '已关联云端', '当前账号不可同步', '可能已在本机', '读取云端论文'])
+    expect(translate(text, locale), text).not.toMatch(/[㐀-鿿]/)
+  expect(translate('下载 lab/thesis 到本地', 'en')).toContain('lab/thesis')
+})
+it('translates the failure reason together with its frame instead of leaving it in the source language', async () => {
+  const cloud = cloudProvider(); cloud.list.mockRejectedValueOnce(new Error('尚无项目'))
+  setLocale('en'); try {
+    makeWithCloud(cloud); await settle()
+    expect(get('project-library-cloud').textContent).toBe('Could not load cloud papers: No projects yet Local projects are unaffected. Choose “Refresh” to try again.')
+  } finally { setLocale('zh-CN') }
+})
+it('claims a paper can sync only when the signed-in account lists it, and flags cloud rows a broken local link may already hold', async () => {
+  state.projects = [{ ...entry('a'), github: { owner: 'lab', name: 'paper-a' } }, { ...entry('b'), github: { owner: 'other', name: 'paper-b' } }]
+  const cloud = cloudProvider([{ owner: 'lab', name: 'paper-a' }, { owner: 'lab', name: 'thesis' }]); cloud.account = false
+  const panel = makeWithCloud(cloud); await settle()
+  expect(button('Paper a').children[3]!.textContent).toBe('已关联云端'); expect(button('Paper b').children[3]!.textContent).toBe('已关联云端')
+  cloud.account = true; panel.accountChanged(); await settle()
+  expect(button('Paper a').children[3]!.textContent).toBe('可同步'); expect(button('Paper b').children[3]!.textContent).toBe('当前账号不可同步')
+  expect(get('project-library-cloud').textContent).toBe('本机 2 篇，其中 1 篇已关联云端、可同步；另有 1 篇只在云端，可下载到本地。')
+  expect(button('lab/thesis').children[3]!.textContent).toBe('尚未下载')
+  state = { ...state, projects: [...state.projects, { ...entry('c'), github: null, syncIssue: true }] }; changed?.(); await settle()
+  expect(button('Paper c').children[3]!.textContent).toBe('需检查关联'); expect(button('lab/thesis').children[3]!.textContent).toBe('可能已在本机')
+})
+it('never overlaps two cloud reads and retries a read that could not start once the app is idle again', async () => {
+  const cloud = cloudProvider([{ owner: 'lab', name: 'thesis' }]), first = deferred<{ owner: string; name: string }[] | null>()
+  cloud.list.mockReturnValueOnce(first.promise)
+  const panel = makeWithCloud(cloud); await flush(); expect(cloud.list).toHaveBeenCalledOnce()
+  get('project-library-refresh').click(); get('project-library-refresh').click(); panel.resumeCloud(); await flush()
+  expect(cloud.list).toHaveBeenCalledOnce() // still the single read in flight
+  first.resolve(null); await settle() // it could not start because another action was running
+  expect(names()).toEqual(['Paper a', 'Paper b']); expect(get('project-library-cloud').hidden).toBe(true)
+  panel.resumeCloud(); await settle(); expect(cloud.list).toHaveBeenCalledTimes(2); expect(names()).toContain('lab/thesis')
+  cloud.list.mockResolvedValueOnce(null); get('project-library-refresh').click(); await settle()
+  expect(cloud.list).toHaveBeenCalledTimes(3); expect(names()).toContain('lab/thesis') // a skipped refresh keeps the list already shown
+})
 it('leaves the existing right-side sync control as the sole settings entrance with no left-side duplicate', async () => {
   const opened = vi.fn(); get('cloud-open').addEventListener('click', opened)
   const panel = make(); await settle(); await panel.refresh()
@@ -296,7 +402,7 @@ it('shows real last-modified metadata and keeps opened recency only in the toolt
   expect(modified.className).toBe('pl-modified'); expect(modified.dateTime).toBe(modifiedAt)
   expect(modified.title).toContain(`最后修改：${modifiedAt}`)
   expect(modified.title).toContain(`最近打开：${entry('b').lastOpenedAt}`)
-  expect(modified.textContent).not.toBe('未知'); expect(button('Paper b').children).toHaveLength(3)
+  expect(modified.textContent).not.toBe('未知'); expect(button('Paper b').children).toHaveLength(4) // name, location badge, modified time, sync note
 })
 it.each([undefined, null, 'not-a-time', '2024-01-02'])('never substitutes lastOpenedAt for unknown or malformed modification metadata (%s)', async value => {
   state.projects[1]!.lastModifiedAt = value; make(); await settle()

@@ -25,6 +25,18 @@
 #project-library .pl-badge[data-kind="github"]::before { background: #4d6bfe; }
 #project-library .pl-badge[data-kind="issue"] { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
 #project-library .pl-badge[data-kind="issue"]::before { background: #f97316; }
+#project-library .pl-open { row-gap: 3px; }
+#project-library .pl-open > .pl-name, #project-library .pl-open > .pl-modified, #project-library .pl-open > .pl-download { grid-row: 1 / span 2; }
+#project-library .pl-open > .pl-badge { grid-column: 2; grid-row: 1; align-self: end; }
+#project-library .pl-note { grid-column: 2; grid-row: 2; align-self: start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #647084; font-size: 10.5px; line-height: 1.3; }
+#project-library .pl-badge[data-kind="cloud"] { background: #f0f9ff; border-color: #bae6fd; color: #0369a1; }
+#project-library .pl-badge[data-kind="cloud"]::before { background: #0ea5e9; }
+#project-library .pl-project.is-cloud { background: #fbfdff; border-style: dashed; }
+#project-library .pl-cloud { cursor: default; text-align: left; }
+#project-library .pl-download { justify-self: start; min-height: 30px; padding: 5px 14px; border: 1px solid #c7d4fe; border-radius: 999px; background: #eef2ff; color: #2a44c4; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+#project-library .pl-download:hover:not(:disabled) { background: #e0e7ff; border-color: #a5b4fc; }
+#project-library-cloud { margin: -6px 0 14px; padding: 9px 14px; color: #3f4859; background: #f5f7ff; border: 1px solid #dfe6fb; border-radius: 11px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#project-library-cloud[hidden] { display: none; }
 #project-library .pl-modified { min-width: 0; color: #647084; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #project-library .pl-forget { align-self: center; justify-self: center; width: 30px; min-height: 30px; padding: 0; border: 0; border-radius: 8px; color: #8490a3; background: transparent; cursor: pointer; font-size: 18px; transition: background-color 120ms ease, color 120ms ease; }
 #project-library .pl-forget:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }

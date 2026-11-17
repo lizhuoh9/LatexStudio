@@ -7,7 +7,7 @@ Local-first LaTeX desktop workbench for Windows and macOS, with real project fil
 Get versioned packages from [GitHub Releases](https://github.com/lizhuoh9/LatexStudio/releases). **Do not run raw repository code as an installed-app update.**
 
 - Windows x64: choose the `setup.exe` installer, or `portable.exe` for a portable copy.
-- macOS: the available native-architecture ZIP is an **editing test build**, ad-hoc signed, not Apple-notarized. Mac local TeX compilation is not enabled.
+- macOS: Apple Silicon (M-series) only; Intel Macs are not supported (check Apple menu → About This Mac). Open the `mac-arm64` DMG and drag LatexStudio to Applications. It is an **editing test build**, ad-hoc signed, not Apple-notarized, so the first launch is blocked: click Done, then System Settings → Privacy & Security → Open Anyway. Mac local TeX compilation is not enabled.
 - Current packages are **unsigned development releases**, not trusted signed production installers. The app checks public release metadata but never silently downloads, quits or installs. Use the account menu → 检查更新 → 打开版本下载页, save drafts, close normally, then install manually.
 - Signed automatic installation remains disabled until publisher identity/signing and the original installer upgrade path have been accepted. No signature-check bypass or client-side publisher secret is used.
 
@@ -44,7 +44,7 @@ npm run build
 
 On Windows, `npm run dist:win -- --publish never` stages the fixed SHA-256-verified TinyTeX resource and creates unsigned NSIS/portable artifacts. The 247MB archive is intentionally absent from Git; the pinned upstream URL, length and digest are in `client/src/main/tex/resource-policy.ts`. Native engine/helper binaries, their source/patches and license notices are included. Ordinary app startup uses packaged offline components, not system TeX or a shell fallback.
 
-On a real Mac, `npm run dist:mac:test` creates a native-architecture editing ZIP with an explicit development entitlement profile. It does not prove real Mac GUI/permissions or formal signing acceptance.
+On a real Mac, `npm run dist:mac:test` creates an editing DMG for that Mac's CPU with an explicit development entitlement profile; the release runner is Apple Silicon, so releases carry the arm64 DMG only. No application ZIP is produced. It does not prove real Mac GUI/permissions or formal signing acceptance.
 
 ## Release workflow
 
