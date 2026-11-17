@@ -19,6 +19,7 @@ import type { GitHubAccountService } from '../collaboration/service'
 import { readCloudBinding } from '../github/cloud-binding'
 import { CloudRepository } from '../github/cloud-repository'
 import { WorkspaceCloud } from './cloud-workflows'
+import { CloudLinkTrust } from './cloud-link-trust'
 import { githubInstallationUrl } from '../collaboration/configuration'
 import { ProjectLibrary, projectIdForRoot } from './project-library'
 import { readProjectLastModified } from './project-modification'
@@ -40,6 +41,7 @@ export class WorkspaceController {
   private dirty = false
   private busy = false
   private readonly vault: CredentialVault
+  private readonly linkTrust: CloudLinkTrust
   private readonly environmentAbort = new AbortController()
   private environmentTask: Promise<TexEnvironment> | null = null
   private closing = false
@@ -54,6 +56,7 @@ export class WorkspaceController {
     library?: Pick<ProjectLibrary, 'list' | 'remember' | 'resolve' | 'forget'>) {
     this.vault = new CredentialVault(join(dataRoot, 'github-credentials.json'))
     this.library = library ?? new ProjectLibrary(dataRoot)
+    this.linkTrust = new CloudLinkTrust(dataRoot)
     this.cloud = accountService ? new WorkspaceCloud(accountService, this.vault, {
       root: () => this.activeRoot,
       openAuthorization: () => shell.openExternal(githubInstallationUrl()),
@@ -73,7 +76,7 @@ export class WorkspaceController {
       repository: () => this.requireRepository(),
       transfer: (kind, action) => this.transfer.run(kind, action),
       changed: () => this.send({ kind: 'files-changed', paths: [''] })
-    }) : null
+    }, this.linkTrust) : null
   }
 
   async initialize(): Promise<void> {
@@ -219,7 +222,8 @@ export class WorkspaceController {
   }
 
   private async repositoryFor(root: string): Promise<RepositoryService> {
-    if (this.accountService && await readCloudBinding(root)) return new CloudRepository(root, this.accountService, this.vault)
+    if (this.accountService && await readCloudBinding(root)) return new CloudRepository(root, this.accountService, this.vault,
+      binding => this.linkTrust.has(root, binding))
     return new GitHubRepository(root, this.vault)
   }
 

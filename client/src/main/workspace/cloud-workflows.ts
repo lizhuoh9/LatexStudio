@@ -3,13 +3,15 @@ import type { ProjectInfo, RepositoryStatus, SyncResult } from '../../shared/wor
 import type { GitHubAccountService } from '../collaboration/service'
 import { publicProject } from '../collaboration/public-state'
 import { GitHubRepository } from '../github/repository'
-import { readCloudBinding } from '../github/cloud-binding'
+import { cloudBindingForAccess, readCloudBinding, type CloudBinding } from '../github/cloud-binding'
 import type { CredentialVault } from '../github/credentials'
 import { parseProjectLink } from '../../shared/project-links'
 import type { RepositoryOperationOptions } from '../github/repository-operation'
 import { requireText } from './validation'
+import type { CloudLinkTrust } from './cloud-link-trust'
 
 type TransferKind = 'connect' | 'clone' | 'sync'
+const LINK_FIELDS = ['projectId', 'owner', 'name', 'branch', 'accountId'] as const
 export interface CloudWorkflowHost {
   root(): string | null
   openAuthorization(): Promise<void>
@@ -32,19 +34,21 @@ export class WorkspaceCloud implements CloudApi {
   private lastSyncedAt: string | null = null
 
   constructor(private readonly account: GitHubAccountService, private readonly vault: CredentialVault,
-    private readonly host: CloudWorkflowHost) {}
+    private readonly host: CloudWorkflowHost, private readonly trust: Pick<CloudLinkTrust, 'has' | 'remember'>) {}
 
-  async status(): Promise<CloudWorkspaceStatus> {
+  async status(): Promise<CloudWorkspaceStatus> { return (await this.state()).status }
+
+  private async state(): Promise<{ status: CloudWorkspaceStatus; binding: CloudBinding | null }> {
     const session = this.account.status(), root = this.host.root()
     const binding = root ? await readCloudBinding(root) : null
     const signedIn = session.phase === 'signed-in' && session.account !== null
     if (!binding || !this.autoConsent || !signedIn || this.autoConsent.root !== root || this.autoConsent.accountId !== session.account?.id ||
       this.autoConsent.expiresAt !== session.expiresAt) this.autoConsent = null
-    return { configured: session.phase !== 'unconfigured', signedIn, account: session.account,
+    return { binding, status: { configured: session.phase !== 'unconfigured', signedIn, account: session.account,
       connection: binding ? { projectId: binding.projectId, owner: binding.owner, name: binding.name, branch: binding.branch } : null,
       autoSync: this.autoConsent !== null, lastSyncedAt: this.lastSyncedAt,
       message: !signedIn ? session.message : binding ? 'GitHub 项目已关联；共享明确同步的提交，本地草稿不会直接上传。' :
-        '已登录。打开本地论文后可一键创建私有合作项目，或下载已授权项目。' }
+        '已登录。打开本地论文后可一键创建私有合作项目，或下载已授权项目。' } }
   }
 
   openAuthorization(): Promise<void> { return this.host.openAuthorization() }
@@ -83,10 +87,13 @@ export class WorkspaceCloud implements CloudApi {
 
   private async connect(root: string, handle: string, signal: AbortSignal): Promise<void> {
     this.host.requireSaved()
-    await this.account.withSelectedProjectAccess(handle, access => {
+    const linked = await this.account.withSelectedProjectAccess(handle, async access => {
       if (!access.project.private) throw new Error('普通合作只关联私有项目；不会自动更改仓库的公开状态。')
-      return new GitHubRepository(root, this.vault).connectWithAccess(access, { signal })
+      await new GitHubRepository(root, this.vault).connectWithAccess(access, { signal })
+      return cloudBindingForAccess(access)
     }, { signal })
+    // The user chose this project in the app: record what the fresh access says, never what the folder says.
+    await this.trust.remember(root, linked)
     this.autoConsent = null
     await this.host.refreshRepository()
   }
@@ -97,14 +104,17 @@ export class WorkspaceCloud implements CloudApi {
     if (!root) return null
     return this.host.transfer('clone', async signal => {
       const verifySession = this.account.captureSessionGuard()
-      await this.account.withSelectedProjectAccess(requireText(handle, '项目选择', 512), access => {
+      const linked = await this.account.withSelectedProjectAccess(requireText(handle, '项目选择', 512), async access => {
         if (!access.project.private) throw new Error('普通合作仅下载明确授权的私有项目。')
-        return new GitHubRepository(root, this.vault).cloneWithAccess(access, { signal })
+        await new GitHubRepository(root, this.vault).cloneWithAccess(access, { signal })
+        return cloudBindingForAccess(access)
       }, { signal })
       if (signal.aborted) throw new Error('已请求取消；可能保留部分下载文件，当前项目不切换。')
       this.autoConsent = null
       verifySession()
-      return this.host.activate(root, signal, verifySession)
+      const info = await this.host.activate(root, signal, verifySession)
+      await this.trust.remember(info.root, linked)
+      return info
     })
   }
 
@@ -125,13 +135,13 @@ export class WorkspaceCloud implements CloudApi {
     const binding = await this.requireBinding()
     const root = this.requireRoot(), verifySession = this.account.captureSessionGuard()
     const recipient = requireText(login, '对方的 GitHub 用户名', 39)
+    await this.confirmLink(root, binding, true)
     if (!await this.host.confirm(`邀请 ${recipient} 编辑私有项目？`,
       `${binding.owner}/${binding.name} 将授予该账号协作写入权限。对方需接受邀请；分享链接本身不授予权限。`)) {
       throw new Error('已取消邀请，没有发送本次请求。')
     }
     const fresh = await this.requireBinding()
-    const keys = ['projectId', 'owner', 'name', 'branch', 'accountId'] as const
-    if (root !== this.requireRoot() || keys.some(key => fresh[key] !== binding[key])) {
+    if (root !== this.requireRoot() || LINK_FIELDS.some(key => fresh[key] !== binding[key])) {
       throw new Error('确认期间账号或项目关联变化，请重新确认邀请；未发送本次请求。')
     }
     verifySession()
@@ -160,10 +170,12 @@ export class WorkspaceCloud implements CloudApi {
     if (typeof background !== 'boolean') throw new Error('同步模式无效。')
     const root = this.requireRoot(), epoch = this.host.epoch(), verifySession = this.account.captureSessionGuard()
     this.host.requireSaved()
-    const status = await this.status()
-    if (!status.connection || !status.signedIn) throw new Error('请先登录并关联私有合作项目。')
+    const { status, binding } = await this.state()
+    if (!binding || !status.signedIn) throw new Error('请先登录并关联私有合作项目。')
     if (background && !status.autoSync) throw new Error('尚未明确启用本次会话的自动同步。')
-    // The trusted explicit Sync action is consent. Revalidate after async status instead of asking twice.
+    try { await this.confirmLink(root, binding, !background) } catch (error) { this.autoConsent = null; throw error }
+    // The explicit Sync action is the consent to sync, so nothing asks about that. A link this device never
+    // confirmed was asked about just above; either way everything is revalidated after those awaits.
     this.host.requireSaved()
     if (root !== this.host.root() || epoch !== this.host.epoch()) throw new Error('同步准备期间编辑状态变化，未开始同步。')
     verifySession()
@@ -185,8 +197,9 @@ export class WorkspaceCloud implements CloudApi {
     if (typeof enabled !== 'boolean') throw new Error('自动同步设置无效。')
     if (!enabled) { this.autoConsent = null; return this.status() }
     this.host.requireSaved()
-    const root = this.requireRoot(), state = await this.status(), epoch = this.host.epoch()
-    if (!state.signedIn || !state.account || !state.connection) throw new Error('请先登录并关联合作项目。')
+    const root = this.requireRoot(), { status: state, binding } = await this.state(), epoch = this.host.epoch()
+    if (!state.signedIn || !state.account || !binding) throw new Error('请先登录并关联合作项目。')
+    await this.confirmLink(root, binding, true)
     if (!await this.host.confirm('为此项目开启本次会话的自动同步？',
       'App 将在联网且草稿已保存时约每 30 秒尝试提交并交换项目文件。首次失败或冲突会停用，不无限重试；关闭、退出或换项目后需重新开启。')) {
       throw new Error('未开启自动同步。')
@@ -197,6 +210,25 @@ export class WorkspaceCloud implements CloudApi {
     if (session.phase !== 'signed-in' || session.account?.id !== state.account.id) throw new Error('登录状态已变化。')
     this.autoConsent = { root, accountId: state.account.id, expiresAt: session.expiresAt }
     return this.status()
+  }
+
+  /** A link file travels with its folder, so one this device never established is confirmed once before any write.
+   * The dialog is awaited: every caller rechecks project, link and session afterwards, and the two that send
+   * files also recheck saved drafts and the edit epoch. A background sync never asks.
+   */
+  private async confirmLink(root: string, binding: CloudBinding, interactive: boolean): Promise<void> {
+    if (await this.trust.has(root, binding)) return
+    if (!interactive) throw new Error('此文件夹的云端关联尚未在这台设备上确认；请先手动点一次“同步”。')
+    if (!await this.host.confirm(`确认此文件夹关联的云端项目是 ${binding.owner}/${binding.name}？`,
+      '这个关联不是在这台设备上通过 LatexStudio 建立的（例如文件夹来自他人或其他设备）。确认后，同步会把此文件夹的内容提交并上传到该私有仓库。' +
+      `如果你不认识这个仓库，或这个文件夹不该属于它，请取消。\n文件夹：${root}\n分支：${binding.branch}`)) {
+      throw new Error('未确认云端关联，没有向 GitHub 发送任何内容。')
+    }
+    const fresh = await readCloudBinding(root)
+    if (root !== this.host.root() || !fresh || LINK_FIELDS.some(key => fresh[key] !== binding[key])) {
+      throw new Error('确认期间项目关联变化，请重新操作；未发送本次请求。')
+    }
+    await this.trust.remember(root, binding)
   }
 
   private requireRoot(): string {

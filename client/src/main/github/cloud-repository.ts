@@ -2,7 +2,7 @@ import type { GitHubConnection, GitHubSettings, HistoryEntry, RepositoryStatus, 
 import type { GitHubAccountService } from '../collaboration/service'
 import { CollaborationError } from '../collaboration/validation'
 import type { CredentialVault } from './credentials'
-import { assertCloudAccess, readCloudBinding } from './cloud-binding'
+import { assertCloudAccess, readCloudBinding, type CloudBinding } from './cloud-binding'
 import { GitHubRepository } from './repository'
 import { GitHubError, publicError } from './policy'
 import { snapshotRepositoryOperationOptions, type RepositoryOperationOptions } from './repository-operation'
@@ -14,8 +14,12 @@ export class CloudRepository {
   private readonly repository: GitHubRepository
   private pending: Promise<unknown> = Promise.resolve()
 
+  /** `confirmed` answers from the device's own record whether the user established or confirmed this exact link here.
+   * The link file travels with the folder, so every route to an upload is refused until that is true.
+   */
   constructor(private readonly root: string,
-    private readonly accountService: Pick<GitHubAccountService, 'withWritableProjectAccess'>, vault: CredentialVault) {
+    private readonly accountService: Pick<GitHubAccountService, 'withWritableProjectAccess'>, vault: CredentialVault,
+    private readonly confirmed: (binding: CloudBinding) => Promise<boolean>) {
     this.repository = new GitHubRepository(root, vault)
   }
 
@@ -36,6 +40,11 @@ export class CloudRepository {
       await this.repository.snapshot(summary || '同步前保存本地快照')
       const binding = await readCloudBinding(this.root)
       if (!binding) throw new GitHubError('普通协作关联已解除；请重新明确选择项目，本地历史仍保留。')
+      // Checked before any authorization request. The later reads below must equal the same fresh access as this
+      // one, so the link that is uploaded is the link that was confirmed.
+      if (!await this.confirmed(binding).catch(() => false)) {
+        throw new GitHubError('此文件夹的云端关联尚未在这台设备上确认；请用论文栏的“同步”按钮确认后再试，本地历史仍保留。')
+      }
       return this.accountService.withWritableProjectAccess(binding.projectId, async access => {
         access.check()
         if (access.project.private !== true) throw new GitHubError('普通合作仅支持已明确授权的私有项目；未同步。')

@@ -1,6 +1,6 @@
 {
   "name": "paperstudio-client",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "private": true,
   "description": "LatexStudio: local LaTeX projects, PDF preview and safe GitHub synchronization.",
   "license": "AGPL-3.0-only",

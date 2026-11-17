@@ -3,9 +3,12 @@ import type { GitHubAccountService } from '../src/main/collaboration/service'
 import type { CollaborationState } from '../src/shared/collaboration-contracts'
 import type { CredentialVault } from '../src/main/github/credentials'
 import { WorkspaceCloud, type CloudWorkflowHost } from '../src/main/workspace/cloud-workflows'
+import { translate } from '../src/shared/i18n'
 
 const st = vi.hoisted(() => ({ binding: vi.fn(), connect: vi.fn(), clone: vi.fn(), roots: [] as string[] }))
-vi.mock('../src/main/github/cloud-binding', () => ({ readCloudBinding: st.binding }))
+vi.mock('../src/main/github/cloud-binding', () => ({ readCloudBinding: st.binding,
+  cloudBindingForAccess: (access: { project: { id: number; owner: string; name: string } }) => ({ projectId: access.project.id,
+    owner: access.project.owner, name: access.project.name, branch: 'main', accountId: 7 }) }))
 vi.mock('../src/main/github/repository', () => ({ GitHubRepository: class {
   constructor(root: string) { st.roots.push(root) }
   connectWithAccess(...args: unknown[]) { return st.connect(...args) }
@@ -40,8 +43,10 @@ function fixture() {
     refreshRepository: vi.fn(), repository: () => repo, changed: vi.fn(),
     transfer: vi.fn(async (_kind, action) => action(new AbortController().signal))
   }
-  const cloud = new WorkspaceCloud(account as unknown as GitHubAccountService, {} as CredentialVault, host as CloudWorkflowHost)
-  return { cloud, account, host, repo, dirty: (value: boolean) => { dirty = value },
+  // Existing flows run on links this device already confirmed; the last block covers unconfirmed ones.
+  const trust = { has: vi.fn().mockResolvedValue(true), remember: vi.fn().mockResolvedValue(true) }
+  const cloud = new WorkspaceCloud(account as unknown as GitHubAccountService, {} as CredentialVault, host as CloudWorkflowHost, trust)
+  return { cloud, account, host, repo, trust, dirty: (value: boolean) => { dirty = value },
     invalidate: () => { sessionActive = false }, edit: () => { epoch++ }, root: (value: string | null) => { root = value } }
 }
 
@@ -265,5 +270,179 @@ describe('ordinary private GitHub workspace orchestration', () => {
     f.root('/fixture/local'); await f.cloud.setAutoSync(true)
     f.account.status.mockReturnValueOnce({ ...session(), phase: 'signed-out', account: null })
     expect((await f.cloud.status()).autoSync).toBe(false)
+  })
+})
+
+describe('cloud links that were not established on this device', () => {
+  const question = '确认此文件夹关联的云端项目是 alice/paper？'
+  function unconfirmed() {
+    const f = fixture(); st.binding.mockResolvedValue(binding); f.trust.has.mockResolvedValue(false)
+    return f
+  }
+
+  it('asks once, naming the repository, before the first sync and then records the confirmation', async () => {
+    const f = unconfirmed()
+    await expect(f.cloud.sync('progress', false)).resolves.toMatchObject({ uploaded: true })
+    expect(f.host.confirm).toHaveBeenCalledExactlyOnceWith(question, expect.stringContaining('不是在这台设备上'))
+    const detail = f.host.confirm.mock.calls[0]![1] as string
+    expect(detail.endsWith('\n文件夹：/fixture/local\n分支：main')).toBe(true)
+    expect(detail).not.toContain('不再询问')
+    expect(f.trust.has).toHaveBeenCalledWith('/fixture/local', binding)
+    expect(f.trust.remember).toHaveBeenCalledExactlyOnceWith('/fixture/local', binding)
+    expect(f.trust.remember.mock.invocationCallOrder[0]!).toBeLessThan(f.repo.sync.mock.invocationCallOrder[0]!)
+    expect(f.repo.sync).toHaveBeenCalledOnce()
+  })
+
+  it.each(['/fixture/local', 'C:\\Users\\someone\\Documents\\My Paper (final)'])('shows the question in English and Korean with the literal folder %s', async root => {
+    const f = unconfirmed(); f.root(root); f.host.confirm.mockResolvedValueOnce(false)
+    await expect(f.cloud.sync('progress', false)).rejects.toThrow('未确认云端关联')
+    const [title, detail] = f.host.confirm.mock.calls[0]! as [string, string]
+    expect(translate(title, 'en')).toBe('Confirm that this folder\'s cloud project is alice/paper?')
+    expect(translate(detail, 'en')).toMatch(/^This link was not set up through LatexStudio on this device/)
+    expect(translate(detail, 'en').endsWith(`\nFolder: ${root}\nBranch: main`)).toBe(true)
+    expect(translate(detail, 'ko').endsWith(`\n폴더: ${root}\n브랜치: main`)).toBe(true)
+    for (const text of ['未确认云端关联，没有向 GitHub 发送任何内容。', '确认期间项目关联变化，请重新操作；未发送本次请求。',
+      '此文件夹的云端关联尚未在这台设备上确认；请先手动点一次“同步”。',
+      '此文件夹的云端关联尚未在这台设备上确认；请用论文栏的“同步”按钮确认后再试，本地历史仍保留。']) {
+      expect(translate(text, 'en')).not.toBe(text); expect(translate(text, 'ko')).not.toBe(text)
+    }
+  })
+
+  it('sends nothing and records nothing when the confirmation is declined', async () => {
+    const f = unconfirmed(); f.host.confirm.mockResolvedValueOnce(false)
+    await expect(f.cloud.sync('progress', false)).rejects.toThrow('未确认云端关联')
+    expect(f.trust.remember).not.toHaveBeenCalled(); expect(f.repo.sync).not.toHaveBeenCalled()
+    expect(f.host.transfer).not.toHaveBeenCalled()
+  })
+
+  it.each(['link', 'unlinked', 'edit', 'draft', 'project', 'session'] as const)('rechecks %s after the confirmation without sending files', async kind => {
+    const f = unconfirmed()
+    f.host.confirm.mockImplementationOnce(async () => {
+      if (kind === 'draft') f.dirty(true)
+      else if (kind === 'link') st.binding.mockResolvedValue({ ...binding, projectId: 2, name: 'other' })
+      else if (kind === 'unlinked') st.binding.mockResolvedValue(null)
+      else if (kind === 'edit') f.edit()
+      else if (kind === 'project') f.root('/fixture/other')
+      else f.invalidate()
+      return true
+    })
+    await expect(f.cloud.sync('progress', false)).rejects.toThrow(
+      kind === 'session' ? '登录会话已变化' : kind === 'edit' ? '状态变化' : kind === 'draft' ? '先保存' : '关联变化')
+    expect(f.repo.sync).not.toHaveBeenCalled()
+    if (kind === 'link' || kind === 'unlinked' || kind === 'project') expect(f.trust.remember).not.toHaveBeenCalled()
+  })
+
+  it.each(['edit', 'project', 'session'] as const)('rechecks %s after the link confirmation before enabling auto sync', async kind => {
+    const f = unconfirmed()
+    f.host.confirm.mockImplementationOnce(async () => {
+      if (kind === 'edit') f.edit()
+      else if (kind === 'project') f.root('/fixture/other')
+      else f.account.status.mockReturnValue({ ...session(), phase: 'signed-out', account: null })
+      return true
+    })
+    await expect(f.cloud.setAutoSync(true)).rejects.toThrow(kind === 'session' ? '登录状态已变化' : kind === 'edit' ? '状态变化' : '关联变化')
+    f.account.status.mockImplementation(session); f.root('/fixture/local'); f.trust.has.mockResolvedValue(true)
+    expect((await f.cloud.status()).autoSync).toBe(false)
+  })
+
+  it.each(['link', 'project', 'session'] as const)('rechecks %s after the link confirmation before inviting', async kind => {
+    const f = unconfirmed()
+    f.host.confirm.mockImplementationOnce(async () => {
+      if (kind === 'link') st.binding.mockResolvedValue({ ...binding, branch: 'changed' })
+      else if (kind === 'project') f.root('/fixture/other')
+      else f.invalidate()
+      return true
+    })
+    await expect(f.cloud.inviteCollaborator('bob')).rejects.toThrow(kind === 'session' ? '登录会话已变化' : '关联变化')
+    expect(f.account.inviteCollaborator).not.toHaveBeenCalled()
+  })
+
+  it('asks nothing and reads the link no more often for a link this device already confirmed', async () => {
+    const f = fixture(); st.binding.mockResolvedValue(binding)
+    await f.cloud.sync('progress', false)
+    expect(f.host.confirm).not.toHaveBeenCalled(); expect(f.trust.remember).not.toHaveBeenCalled()
+    expect(st.binding).toHaveBeenCalledOnce()
+  })
+
+  it('never asks from a background sync and stops auto sync instead', async () => {
+    const f = fixture(); st.binding.mockResolvedValue(binding)
+    await f.cloud.setAutoSync(true)
+    f.host.confirm.mockClear(); f.trust.has.mockResolvedValue(false)
+    await expect(f.cloud.sync('progress', true)).rejects.toThrow('尚未在这台设备上确认')
+    expect(f.host.confirm).not.toHaveBeenCalled(); expect(f.repo.sync).not.toHaveBeenCalled()
+    expect(f.trust.remember).not.toHaveBeenCalled()
+    f.trust.has.mockResolvedValue(true)
+    expect((await f.cloud.status()).autoSync).toBe(false)
+  })
+
+  it('records a link made by explicitly choosing or creating the project, from the fresh access and not the folder', async () => {
+    const f = fixture(); f.trust.has.mockResolvedValue(false)
+    await f.cloud.linkProject('selected')
+    expect(f.trust.remember).toHaveBeenCalledExactlyOnceWith('/fixture/local', binding)
+    expect(f.trust.remember.mock.invocationCallOrder[0]!).toBeGreaterThan(st.connect.mock.invocationCallOrder[0]!)
+    expect(f.host.confirm).not.toHaveBeenCalled()
+    const g = fixture(); g.trust.has.mockResolvedValue(false)
+    await g.cloud.createPrivateProject('paper')
+    expect(g.trust.remember).toHaveBeenCalledExactlyOnceWith('/fixture/local', binding)
+  })
+
+  it('does not record a link when connecting failed or the selection was public', async () => {
+    const f = fixture(); st.connect.mockRejectedValueOnce(new Error('network'))
+    await expect(f.cloud.linkProject('selected')).rejects.toThrow('network')
+    f.account.withSelectedProjectAccess.mockImplementationOnce(async (_handle, action) => action({ project: { ...project, private: false } }))
+    await expect(f.cloud.linkProject('selected')).rejects.toThrow('私有项目')
+    expect(f.trust.remember).not.toHaveBeenCalled()
+  })
+
+  it('records a downloaded project for the folder that actually became active', async () => {
+    const f = fixture(); f.trust.has.mockResolvedValue(false)
+    f.host.activate.mockResolvedValueOnce({ root: '/fixture/canonical-download' })
+    await f.cloud.downloadProject('selected')
+    expect(f.trust.remember).toHaveBeenCalledExactlyOnceWith('/fixture/canonical-download', binding)
+    expect(f.trust.remember.mock.invocationCallOrder[0]!).toBeGreaterThan(f.host.activate.mock.invocationCallOrder[0]!)
+    expect(f.host.confirm).not.toHaveBeenCalled()
+  })
+
+  it('does not record a download that failed or never became active', async () => {
+    const f = fixture(); st.clone.mockRejectedValueOnce(new Error('network'))
+    await expect(f.cloud.downloadProject('selected')).rejects.toThrow('network')
+    f.host.activate.mockRejectedValueOnce(new Error('not adopted'))
+    await expect(f.cloud.downloadProject('selected')).rejects.toThrow('not adopted')
+    expect(f.trust.remember).not.toHaveBeenCalled()
+  })
+
+  it('confirms the link before the auto sync question and enables nothing when it is declined', async () => {
+    const f = unconfirmed(); f.host.confirm.mockResolvedValueOnce(false)
+    await expect(f.cloud.setAutoSync(true)).rejects.toThrow('未确认云端关联')
+    expect(f.host.confirm).toHaveBeenCalledExactlyOnceWith(question, expect.any(String))
+    f.trust.has.mockResolvedValue(true)
+    expect((await f.cloud.status()).autoSync).toBe(false)
+    const g = unconfirmed()
+    expect(await g.cloud.setAutoSync(true)).toMatchObject({ autoSync: true })
+    expect(g.host.confirm.mock.calls.map(call => call[0])).toEqual([question, '为此项目开启本次会话的自动同步？'])
+    expect(g.trust.remember).toHaveBeenCalledExactlyOnceWith('/fixture/local', binding)
+  })
+
+  it('confirms the link before the invitation question and invites nobody when it is declined', async () => {
+    const f = unconfirmed(); f.host.confirm.mockResolvedValueOnce(false)
+    await expect(f.cloud.inviteCollaborator('bob')).rejects.toThrow('未确认云端关联')
+    expect(f.host.confirm).toHaveBeenCalledExactlyOnceWith(question, expect.any(String))
+    expect(f.account.inviteCollaborator).not.toHaveBeenCalled()
+    const g = unconfirmed()
+    await g.cloud.inviteCollaborator('bob')
+    expect(g.host.confirm.mock.calls.map(call => call[0])).toEqual([question, '邀请 bob 编辑私有项目？'])
+    expect(g.account.inviteCollaborator).toHaveBeenCalledOnce()
+  })
+
+  it('still syncs after a confirmation that could not be saved', async () => {
+    const f = unconfirmed(); f.trust.remember.mockResolvedValueOnce(false)
+    await expect(f.cloud.sync('progress', false)).resolves.toMatchObject({ uploaded: true })
+    expect(f.repo.sync).toHaveBeenCalledOnce()
+  })
+
+  it('offers a share link for an unconfirmed folder without asking, because nothing is written', async () => {
+    const f = unconfirmed()
+    expect(await f.cloud.shareProject()).toBe('https://github.com/alice/paper')
+    expect(f.host.confirm).not.toHaveBeenCalled(); expect(f.trust.remember).not.toHaveBeenCalled()
   })
 })

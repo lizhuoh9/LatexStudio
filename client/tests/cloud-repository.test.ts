@@ -37,6 +37,8 @@ const author = { name: 'Fixture', email: 'fixture@example.invalid' }
 const binding = { projectId: 42, owner: 'lab-team', name: 'paper', branch: 'main', accountId: 123 }
 const repo = () => ({ id: 42, name: 'paper', private: true, owner: { login: 'lab-team' } })
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
+// These fixtures link through the app itself, which is what records a link as confirmed on this device.
+const confirmed = async (): Promise<boolean> => true
 async function folder(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'paperstudio-cloud-repo-')); roots.push(root); return root
 }
@@ -70,7 +72,7 @@ async function connected() {
   const vault = new CredentialVault(join(await folder(), 'vault.json'))
   const forbidden = ['load', 'save', 'remove'] as const
   for (const key of forbidden) vi.spyOn(vault, key).mockRejectedValue(new Error(`Vault.${key} forbidden`))
-  const legacy = new GitHubRepository(root, vault), cloud = new CloudRepository(root, account, vault)
+  const legacy = new GitHubRepository(root, vault), cloud = new CloudRepository(root, account, vault, confirmed)
   const selections = await account.projectSelections()
   await account.withSelectedProjectAccess(selections[0]!.handle, access => legacy.connectWithAccess(access))
   return { account, server, fetcher, root, vault, legacy, cloud }
@@ -87,7 +89,7 @@ async function connectedPair() {
     const selected = selections.find(value => value.project.id === id)!
     const root = await folder(), legacy = new GitHubRepository(root, vault)
     await account.withSelectedProjectAccess(selected.handle, access => legacy.connectWithAccess(access))
-    return { root, cloud: new CloudRepository(root, account, vault), id,
+    return { root, cloud: new CloudRepository(root, account, vault, confirmed), id,
       url: `https://github.com/${selected.project.owner}/${selected.project.name}.git` }
   }
   return { account, fetcher, vault, vaultPath, a: await connect(42), b: await connect(84) }
@@ -187,6 +189,41 @@ it('refreshes authorization on every sync and uploads only descendants with forc
   expect((await cloud.history())[0]?.summary).toBe('offline recovery')
   expect(await readFile(join(root, 'main.tex'), 'utf8')).toBe('offline retained')
   expect(vault.load).not.toHaveBeenCalled(); expect(vault.save).not.toHaveBeenCalled()
+})
+
+it('refuses a link this device never confirmed before any authorization or Git transfer, keeping local history', async () => {
+  const { account, root, fetcher, vault } = await connected()
+  const decide = vi.fn<(value: typeof binding) => Promise<boolean>>().mockResolvedValue(false)
+  const cloud = new CloudRepository(root, account, vault, decide)
+  await writeFile(join(root, 'main.tex'), 'retained while unconfirmed')
+  const fetch = vi.spyOn(git, 'fetch'), push = vi.spyOn(git, 'push'), requests = fetcher.mock.calls.length
+  await expect(cloud.sync('unconfirmed link')).rejects.toThrow('尚未在这台设备上确认')
+  expect(decide).toHaveBeenCalledExactlyOnceWith(binding)
+  expect(fetcher.mock.calls).toHaveLength(requests)
+  expect(fetch).not.toHaveBeenCalled(); expect(push).not.toHaveBeenCalled()
+  expect((await cloud.history())[0]?.summary).toBe('unconfirmed link')
+  expect(await readFile(join(root, 'main.tex'), 'utf8')).toBe('retained while unconfirmed')
+})
+
+it('treats a confirmation check that fails as unconfirmed', async () => {
+  const { account, root, fetcher, vault } = await connected()
+  const cloud = new CloudRepository(root, account, vault, async () => { throw new Error('record unavailable') })
+  const push = vi.spyOn(git, 'push'), requests = fetcher.mock.calls.length
+  await expect(cloud.sync('unverifiable link')).rejects.toThrow('尚未在这台设备上确认')
+  expect(fetcher.mock.calls).toHaveLength(requests); expect(push).not.toHaveBeenCalled()
+})
+
+it('asks the device record about exactly the link that is then authorized and uploaded', async () => {
+  const { account, root, vault } = await connected()
+  const decide = vi.fn<(value: typeof binding) => Promise<boolean>>().mockResolvedValue(true)
+  const cloud = new CloudRepository(root, account, vault, decide)
+  await writeFile(join(root, 'main.tex'), 'base'); await cloud.snapshot('base')
+  fetchFrom(await remoteFrom(root))
+  const push = vi.spyOn(git, 'push').mockResolvedValue({ ok: true, error: null, refs: { 'refs/heads/main': { ok: true, error: '' } } })
+  await writeFile(join(root, 'main.tex'), 'confirmed update')
+  expect(await cloud.sync('confirmed link')).toMatchObject({ uploaded: true })
+  expect(decide).toHaveBeenCalledExactlyOnceWith(binding)
+  expect(decide.mock.invocationCallOrder[0]!).toBeLessThan(push.mock.invocationCallOrder[0]!)
 })
 
 it.each(['account', 'branch', 'project', 'permissions', 'private', 'origin'])('rejects fresh %s drift before Git transfer and retains local history', async drift => {
