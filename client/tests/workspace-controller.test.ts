@@ -1,4 +1,7 @@
 import type { BrowserWindow } from 'electron'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentSnapshot, ProjectInfo } from '../src/shared/workspace-contracts'
 import type { ProjectLibraryEntry } from '../src/shared/project-library-contracts'
@@ -14,16 +17,17 @@ const st = vi.hoisted(() => ({
   load: vi.fn(), save: vi.fn(), compile: vi.fn(), cancel: vi.fn(), dispose: vi.fn(),
   environment: vi.fn(), enabled: vi.fn(), rendererDirty: false, autoAck: true,
   versions: vi.fn(), versionDetail: vi.fn(), prepare: vi.fn(), beforeInitialize: vi.fn(), network: vi.fn(),
-  remember: vi.fn(), binding: vi.fn(),
+  remember: vi.fn(), binding: vi.fn(), saveAs: vi.fn(), fingerprint: vi.fn(),
   failRoot: '', failWatch: '', watchers: [] as Array<{ root: string; listener: (paths: string[]) => void }>
 }))
 
 vi.mock('electron', () => ({
+  app: { getPath: (name: string) => `/fixture/${name}` },
   ipcMain: {
     handle: (channel: string, handler: Handler) => st.handles.set(channel, handler),
     on: (channel: string, handler: Message) => st.events.set(channel, handler)
   },
-  dialog: { showOpenDialog: st.select, showMessageBox: st.prompt }
+  dialog: { showOpenDialog: st.select, showMessageBox: st.prompt, showSaveDialog: st.saveAs }
 }))
 
 vi.mock('../src/main/local/network', () => ({ isNetworkProject: st.network }))
@@ -37,6 +41,7 @@ vi.mock('../src/main/local/project', () => ({
       return { id: this.root, name: this.root, root: this.root, files: [], defaultMain: 'main.tex' }
     }
     async list() { return [] }
+    async fingerprint() { return st.fingerprint(this.root) }
     async read(path: string) { return { path, content: 'text', revision: 'old' } }
     save(path: string, content: string, revision: string, options?: unknown) {
       return options ? st.save(path, content, revision, options) : st.save(path, content, revision)
@@ -135,6 +140,8 @@ beforeEach(() => {
   st.network.mockReset().mockResolvedValue(false)
   st.remember.mockReset().mockResolvedValue(undefined)
   st.binding.mockReset().mockResolvedValue(null)
+  st.saveAs.mockReset().mockResolvedValue({ canceled: true })
+  st.fingerprint.mockReset().mockResolvedValue('sources-1')
   st.rendererDirty = false; st.autoAck = true
   st.environment.mockReset().mockResolvedValue({ available: false, engines: [], description: 'fixture' })
   st.send.mockImplementation((_channel: string, event: { kind: string; requestId?: string }) => {
@@ -245,6 +252,34 @@ describe('trusted local workspace integration', () => {
     await expect(invoke(C.snapshot, 'Version')).rejects.toThrow('先保存')
     await expect(invoke(C.compile, { mainFile: 'main.tex', engine: 'pdflatex' })).rejects.toThrow('先保存')
     expect(st.compile).not.toHaveBeenCalled()
+  })
+
+  it('saves only Main\'s own last successful PDF to the path chosen in the native dialog', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'latexstudio-pdf-'))
+    try {
+      await controller(); select('old'); await invoke(C.open)
+      await expect(invoke(C.savePdf)).rejects.toThrow('还没有编译成功的 PDF')
+      st.compile.mockResolvedValueOnce({ ok: false, canceled: false, log: 'failed', pdf: null, durationMs: 1 })
+      await invoke(C.compile, { mainFile: 'chapters/thesis.tex', engine: 'pdflatex' })
+      await expect(invoke(C.savePdf)).rejects.toThrow('还没有编译成功的 PDF')
+      st.compile.mockResolvedValueOnce({ ok: true, canceled: false, log: '', pdf: new Uint8Array([37, 80, 68, 70]), durationMs: 1 })
+      await invoke(C.compile, { mainFile: 'chapters/thesis.tex', engine: 'pdflatex' })
+      expect(await invoke(C.savePdf)).toEqual({ saved: false })
+      expect(st.saveAs).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+        defaultPath: join('/fixture/downloads', 'thesis.pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] }))
+      const target = join(folder, 'chosen.pdf')
+      st.saveAs.mockResolvedValueOnce({ canceled: false, filePath: target })
+      expect(await invoke(C.savePdf)).toEqual({ saved: true, path: target, stale: false })
+      expect([...await readFile(target)]).toEqual([37, 80, 68, 70])
+      expect(st.saveAs).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ defaultPath: join('/fixture/downloads', 'thesis.pdf') }))
+      st.fingerprint.mockResolvedValue('sources-2')
+      st.saveAs.mockResolvedValueOnce({ canceled: false, filePath: target })
+      expect(await invoke(C.savePdf)).toMatchObject({ saved: true, stale: true })
+      expect(st.saveAs).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ defaultPath: join(folder, 'thesis.pdf') }))
+      await expect(invoke(C.savePdf, 'C:/elsewhere/evil.pdf')).rejects.toThrow('不接受路径')
+      select('beta'); await invoke(C.open)
+      await expect(invoke(C.savePdf)).rejects.toThrow('还没有编译成功的 PDF')
+    } finally { await rm(folder, { recursive: true, force: true }) }
   })
 
   it('prevents closing or switching while a compile is running, but permits cancellation', async () => {

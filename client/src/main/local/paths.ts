@@ -6,8 +6,10 @@ import type { ProjectFile } from '../../shared/workspace-contracts'
 
 export const LIMITS = Object.freeze({ text: 4 * 1024 * 1024, file: 32 * 1024 * 1024,
   project: 128 * 1024 * 1024, entries: 10_000, depth: 32, pdf: 32 * 1024 * 1024 })
+// `.latexstudio` holds app-written data that does sync (PDF comment logs) but is not paper source:
+// hidden from the file tree, editor, compile copy and file history; comment code reaches it directly.
 const SKIP = new Set(['.git', 'node_modules', 'build', 'dist', 'out', 'release', 'coverage',
-  '.next', '.cache', '.paperstudio', 'target'])
+  '.next', '.cache', '.paperstudio', '.latexstudio', 'target'])
 const OUTPUT = /\.(?:aux|log|fls|fdb_latexmk|synctex(?:\.gz)?|toc|lof|lot|nav|snm|vrb|fmt|base|mem|pool|cnf|fndb)$/i
 const TEXT = /\.(?:tex|ltx|bib|sty|cls|bst|txt|md|csv|tsv|json|yaml|yml|toml|cfg|def|clo|dtx|ins|ist)$/i
 const RESERVED = /^(?:con|conin\$|conout\$|clock\$|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i

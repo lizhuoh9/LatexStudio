@@ -43,6 +43,13 @@ export class ProjectService {
     this.assertActive()
     return this.project.list(true)
   }
+  /** One digest over the listed files' change fingerprints (same walk and fields as change polling); it changes
+   * whenever a project file is added, removed, replaced or modified. Read-only.
+   */
+  async fingerprint(): Promise<string> {
+    const { fingerprints } = await this.snapshot()
+    return createHash('sha256').update(JSON.stringify([...fingerprints])).digest('hex')
+  }
   async read(path: string): Promise<DocumentSnapshot> {
     this.assertActive()
     const bytes = await this.project.readBytes(path, LIMITS.text)

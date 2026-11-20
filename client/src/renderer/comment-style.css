@@ -1,0 +1,55 @@
+/* PDF comments: highlights drawn under the selectable text layer, a comment list beside the PDF, a floating add button. */
+.preview-panel:has(> #comment-panel:not([hidden])) { display: grid; grid-template-columns: minmax(0, 1fr) min(300px, 52%); grid-template-rows: auto minmax(0, 1fr); }
+.preview-panel:has(> #comment-panel:not([hidden])) > .preview-toolbar { grid-column: 1 / -1; grid-row: 1; }
+.preview-panel:has(> #comment-panel:not([hidden])) > .pdf-scroll { grid-column: 1; grid-row: 2; min-height: 0; }
+#comment-panel { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface-paper, #ffffff); border-left: 1px solid var(--frame-border, #e3e8f2); color: var(--text, #111827); }
+/* A narrow PDF column (set from script by its measured width) stacks the list under the PDF instead of squeezing both. */
+.preview-panel.comments-stacked:has(> #comment-panel:not([hidden])) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) minmax(150px, 42%); }
+.preview-panel.comments-stacked > #comment-panel { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--frame-border, #e3e8f2); }
+#comment-panel .comment-heading { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px 4px 12px; border-bottom: 1px solid var(--frame-border, #e3e8f2); background: var(--nav-bg, #f4f6fa); }
+#comment-panel .comment-heading h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--nav-text, #111827); white-space: nowrap; }
+#comment-summary { flex: 1; min-width: 0; color: var(--text-secondary, #3f4859); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#comment-panel .comment-compose { display: grid; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--frame-border, #e3e8f2); background: #fffdfd; }
+#comment-panel blockquote { margin: 0; padding: 6px 8px; border-left: 3px solid #dc2626; background: #fef2f2; color: #374151; font-size: 12px; line-height: 1.45; max-height: 76px; overflow: auto; overflow-wrap: anywhere; }
+#comment-panel textarea { width: 100%; box-sizing: border-box; min-height: 56px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.45; padding: 6px 8px; border: 1px solid #cbd3e2; border-radius: 8px; background: #ffffff; color: #111827; }
+#comment-panel textarea:focus-visible { outline: 2px solid #3b58eb; outline-offset: 1px; }
+#comment-panel .comment-identity, #comment-panel .comment-status { margin: 0; color: var(--text-secondary, #3f4859); font-size: 11px; line-height: 1.45; }
+#comment-panel .comment-status { padding: 10px 12px; }
+#comment-panel .button-row { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+#comment-panel .button-row button { font-size: 12px; padding: 4px 12px; border-radius: 8px; }
+#comment-list { list-style: none; margin: 0; padding: 8px; overflow: auto; flex: 1; display: grid; align-content: start; gap: 8px; }
+#comment-list .comment-thread { display: grid; gap: 6px; padding: 8px 10px; background: #ffffff; border: 1px solid #e5e7eb; border-left: 4px solid #dc2626; border-radius: 8px; font-size: 12px; line-height: 1.45; }
+#comment-list .comment-thread.is-resolved { border-left-color: #16a34a; background: #f6fef9; }
+#comment-list .comment-thread.is-stale { border-top-style: dashed; border-right-style: dashed; border-bottom-style: dashed; }
+#comment-list .comment-thread.is-active { border-color: #3b58eb; border-left-color: inherit; box-shadow: 0 0 0 2px rgba(59, 88, 235, 0.22); }
+#comment-list .comment-thread.is-open.is-active { border-left-color: #dc2626; }
+#comment-list .comment-thread.is-resolved.is-active { border-left-color: #16a34a; }
+#comment-list .comment-quote { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; padding: 0; border: 0; background: none; color: #4b5563; font: inherit; font-style: italic; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
+#comment-list .comment-quote:hover { color: #111827; }
+#comment-list .comment-quote:focus-visible { outline: 2px solid #3b58eb; outline-offset: 2px; border-radius: 4px; }
+#comment-list .comment-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--text-secondary, #3f4859); font-size: 11px; }
+#comment-list .comment-author { color: #111827; font-weight: 600; overflow-wrap: anywhere; }
+#comment-list .comment-badge { padding: 0 7px; border-radius: 999px; background: #eef1f7; color: #3f4859; font-size: 10.5px; white-space: nowrap; }
+#comment-list .comment-badge.is-fixed { background: #dcfce7; color: #166534; }
+#comment-list .comment-badge.is-stale { background: #fef3c7; color: #92400e; }
+#comment-list .comment-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #111827; }
+#comment-list .comment-replies { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid #e5e7eb; display: grid; gap: 6px; }
+#comment-list .comment-resolved-note, #comment-list .comment-location { margin: 0; color: var(--text-secondary, #3f4859); font-size: 11px; overflow-wrap: anywhere; }
+#comment-list .comment-resolved-note { color: #166534; }
+#comment-list .comment-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+#comment-list .comment-actions button { font-size: 11px; padding: 2px 9px; border-radius: 7px; border: 1px solid #cbd3e2; background: #ffffff; color: #1f2937; }
+#comment-list .comment-actions button:hover:not(:disabled) { background: #e4e9f3; }
+#comment-list .comment-actions .comment-resolve { border-color: #86efac; background: #f0fdf4; color: #166534; font-weight: 600; }
+#comment-list .comment-actions .comment-resolve::before { content: '✓'; margin-inline-end: 4px; }
+#comment-list .comment-actions .comment-resolve:hover:not(:disabled) { background: #dcfce7; }
+#comment-list .comment-reply-form { display: grid; gap: 6px; }
+body[data-ui-theme="overleaf"] #comments-open { color: #111827; font-size: 11px; border-radius: 8px; padding: 3px 9px; border: 1px solid transparent; }
+body[data-ui-theme="overleaf"] #comments-open:is(:hover, :focus-visible), body[data-ui-theme="overleaf"] #comments-open[aria-expanded="true"] { background: #e4e9f3; color: #111827; border-color: #cbd3e2; }
+#comment-count:not(:empty) { display: inline-block; margin-inline-start: 5px; min-width: 16px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #ffffff; font-size: 10px; line-height: 16px; text-align: center; }
+#pdf-pages .pdf-comment-layer { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+#pdf-pages .pdf-comment-mark { position: absolute; border-radius: 2px; mix-blend-mode: multiply; }
+#pdf-pages .pdf-comment-mark.is-open { background: rgba(239, 68, 68, 0.26); box-shadow: inset 0 -2px 0 rgba(220, 38, 38, 0.85); }
+#pdf-pages .pdf-comment-mark.is-active { outline: 2px solid rgba(59, 88, 235, 0.8); outline-offset: 1px; }
+#pdf-comment-add { position: fixed; z-index: 60; padding: 4px 12px; border: 0; border-radius: 999px; background: #dc2626; color: #ffffff; font-size: 12px; font-weight: 600; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25); cursor: pointer; }
+#pdf-comment-add:hover { background: #b91c1c; }
+#pdf-comment-add:focus-visible { outline: 2px solid #3b58eb; outline-offset: 2px; }

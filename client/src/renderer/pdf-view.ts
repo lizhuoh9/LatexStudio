@@ -3,6 +3,7 @@ import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentLoadingTas
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import './pdf-preview-style.css'
 import type { SyncTexTarget } from '../shared/synctex'
+import type { PdfTextItem } from '../shared/comment-anchor'
 import { element, text } from './dom'
 import { readableError } from './editor-model'
 import { uiAttribute } from './i18n-dom'
@@ -20,6 +21,9 @@ interface PageSlot {
 interface Drawing { slot: PageSlot; page: PDFPageProxy; canvas: HTMLCanvasElement; task: RenderTask }
 interface PanState { pointerId: number; startX: number; startY: number; startLeft: number; startTop: number; moved: boolean }
 export interface PdfDoubleClickLocation { page: number; x: number; y: number; word?: string }
+/** Plain text items of one page in PDF points, top-left origin, as text only (no fonts, links or scripts). */
+export interface PdfPageText { width: number; height: number; items: PdfTextItem[] }
+const MAX_TEXT_ITEMS = 50_000
 
 function extractPdfWord(target: EventTarget | null): string | undefined {
   const selected = typeof window.getSelection === 'function' ? window.getSelection()?.toString() ?? '' : ''
@@ -47,9 +51,11 @@ export class PdfPreview {
   private lastError = ''
   private ctrlPressed = false
   private pan: PanState | null = null
-  private highlight: HTMLDivElement | null = null
+  private highlights: HTMLDivElement[] = []
   private highlightSlot: PageSlot | null = null
   private highlightTimer: ReturnType<typeof setTimeout> | null = null
+  private overlay: ((page: number) => HTMLElement | null) | null = null
+  private texts = new Map<number, Promise<PdfPageText | null>>()
   private host = element('pdf-pages')
   private scroll = this.host.closest<HTMLElement>('.pdf-scroll')
   private observer: ResizeObserver | null = null
@@ -122,7 +128,8 @@ export class PdfPreview {
     }
   }
 
-  async show(bytes: Uint8Array): Promise<void> {
+  /** `mounted` runs once the new document's pages exist (text is readable), before any page has been painted. */
+  async show(bytes: Uint8Array, mounted?: () => void): Promise<void> {
     if (this.disposed) return
     const generation = ++this.generation
     await this.reset()
@@ -139,6 +146,7 @@ export class PdfPreview {
       this.page = 1; this.ratio = Math.SQRT2; this.lastError = ''
       this.mount(document.numPages)
       element('pdf-empty').hidden = true
+      try { mounted?.() } catch { /* A listener must not turn a loaded preview into a failed one. */ }
       await this.schedule()
     } catch (error) {
       if (generation === this.generation && !this.disposed) {
@@ -186,6 +194,28 @@ export class PdfPreview {
     const scaleX = slot.width / slot.baseWidth, scaleY = slot.height / slot.baseHeight
     const cssX = Math.max(0, refined.x * scaleX - 3), cssY = Math.max(0, refined.y * scaleY - 2)
     const cssW = Math.max(24, refined.width * scaleX + 6), cssH = Math.max(16, refined.height * scaleY + 4)
+    this.scrollToBox(scroll, slot, cssX, cssY, cssW)
+    this.showHighlight(slot, [{ x: cssX, y: cssY, width: cssW, height: cssH }])
+    await this.schedule()
+  }
+
+  /** Scrolls to a comment's text (PDF points, one rect per line) and flashes every line the same temporary way
+   * as a SyncTeX jump; nothing stays on the page afterwards.
+   */
+  async reveal(page: number, rects: readonly { x: number; y: number; width: number; height: number }[]): Promise<void> {
+    const owner = this.document, scroll = this.scroll, slot = this.slots[page - 1]
+    if (!owner || !scroll || !slot || this.disposed || !rects.length) return
+    await this.ensurePageDimensions(owner, slot)
+    if (owner !== this.document || this.disposed || !slot.baseWidth || !slot.baseHeight) return
+    const scaleX = slot.width / slot.baseWidth, scaleY = slot.height / slot.baseHeight
+    const boxes = rects.map(rect => ({ x: Math.max(0, rect.x * scaleX - 2), y: Math.max(0, rect.y * scaleY - 2),
+      width: rect.width * scaleX + 4, height: rect.height * scaleY + 4 }))
+    this.scrollToBox(scroll, slot, boxes[0]!.x, boxes[0]!.y, boxes[0]!.width)
+    this.showHighlight(slot, boxes)
+    await this.schedule()
+  }
+
+  private scrollToBox(scroll: HTMLElement, slot: PageSlot, cssX: number, cssY: number, cssW: number): void {
     scroll.scrollTop = Math.max(0, slot.top + cssY - (scroll.clientHeight || 800) * 0.42)
     const pageLeft = slot.node.offsetLeft ?? 0
     if (scroll.scrollWidth > scroll.clientWidth + 1) {
@@ -194,8 +224,6 @@ export class PdfPreview {
         scroll.scrollLeft = Math.max(0, targetLeft + cssW / 2 - scroll.clientWidth / 2)
       }
     }
-    this.showHighlight(slot, cssX, cssY, cssW, cssH)
-    await this.schedule()
   }
 
   private async refineTargetWord(owner: PDFDocumentProxy, slot: PageSlot, target: SyncTexTarget, word: string): Promise<SyncTexTarget> {
@@ -233,11 +261,59 @@ export class PdfPreview {
     } catch { return target } finally { page.cleanup() }
   }
 
+  /** A stable per-page element drawn between the page bitmap and the text layer (comment highlights). */
+  setOverlay(provider: ((page: number) => HTMLElement | null) | null): void {
+    this.overlay = provider
+    for (const slot of this.slots) if (slot.canvas) slot.node.replaceChildren(...this.slotChildren(slot))
+  }
+
+  get pageCount(): number { return this.document ? this.slots.length : 0 }
+
+  /** Page size in PDF points once known (measured on demand). */
+  async pageSize(pageNumber: number): Promise<{ width: number; height: number } | null> {
+    const owner = this.document, slot = this.slots[pageNumber - 1]
+    if (!owner || !slot || this.disposed) return null
+    await this.ensurePageDimensions(owner, slot)
+    return owner === this.document && slot.baseWidth && slot.baseHeight ? { width: slot.baseWidth, height: slot.baseHeight } : null
+  }
+
+  /** Cached per document; null when the page has no readable text or the document changed meanwhile. */
+  async pageText(pageNumber: number): Promise<PdfPageText | null> {
+    const owner = this.document
+    if (!owner || this.disposed || !Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > this.slots.length) return null
+    let task = this.texts.get(pageNumber)
+    if (!task) { task = this.readPageText(owner, pageNumber).catch(() => null); this.texts.set(pageNumber, task) }
+    const result = await task
+    return owner === this.document && !this.disposed ? result : null
+  }
+
+  private async readPageText(owner: PDFDocumentProxy, pageNumber: number): Promise<PdfPageText | null> {
+    const page = await owner.getPage(pageNumber)
+    try {
+      if (typeof page.getTextContent !== 'function') return null
+      const base = page.getViewport({ scale: 1 })
+      if (typeof base.convertToViewportPoint !== 'function') return null
+      const { items } = await page.getTextContent()
+      const result: PdfTextItem[] = []
+      for (const entry of items) {
+        if (result.length >= MAX_TEXT_ITEMS) break
+        if (!('str' in entry) || !entry.str || !Array.isArray(entry.transform) || entry.transform.length < 6) continue
+        const tx = entry.transform[4]!, ty = entry.transform[5]!, size = Math.max(entry.height || 0, Math.hypot(entry.transform[2]!, entry.transform[3]!), 1)
+        const [x1, y1] = base.convertToViewportPoint(tx, ty - size * 0.22), [x2, y2] = base.convertToViewportPoint(tx + (entry.width || 0), ty + size * 0.9)
+        if (![x1, y1, x2, y2].every(value => Number.isFinite(value))) continue
+        result.push({ str: entry.str, x: Math.min(x1!, x2!), y: Math.min(y1!, y2!), width: Math.abs(x2! - x1!), height: Math.abs(y2! - y1!) })
+      }
+      return { width: base.width, height: base.height, items: result }
+    } finally { page.cleanup() }
+  }
+
   private slotChildren(slot: PageSlot): Node[] {
     const nodes: Node[] = []
     if (slot.canvas) nodes.push(slot.canvas)
+    const overlay = slot.canvas ? this.overlay?.(slot.number) : null
+    if (overlay) nodes.push(overlay)
     if (slot.textNode) nodes.push(slot.textNode)
-    if (this.highlight && this.highlightSlot === slot) nodes.push(this.highlight)
+    if (this.highlightSlot === slot) nodes.push(...this.highlights)
     return nodes
   }
 
@@ -263,22 +339,26 @@ export class PdfPreview {
     } finally { page.cleanup() }
   }
 
-  private showHighlight(slot: PageSlot, x: number, y: number, width: number, height: number): void {
+  /** Temporary focus boxes (CSS px on the page); they fade out and are removed after 3.5 s. */
+  private showHighlight(slot: PageSlot, boxes: readonly { x: number; y: number; width: number; height: number }[]): void {
     this.clearHighlight()
-    const box = window.document.createElement('div')
-    box.className = 'pdf-sync-highlight'; box.setAttribute('aria-hidden', 'true')
-    box.style.left = `${x}px`; box.style.top = `${y}px`
-    box.style.width = `${width}px`; box.style.height = `${height}px`
-    this.highlight = box; this.highlightSlot = slot
+    this.highlights = boxes.map(({ x, y, width, height }) => {
+      const box = window.document.createElement('div')
+      box.className = 'pdf-sync-highlight'; box.setAttribute('aria-hidden', 'true')
+      box.style.left = `${x}px`; box.style.top = `${y}px`
+      box.style.width = `${width}px`; box.style.height = `${height}px`
+      return box
+    })
+    this.highlightSlot = slot
     slot.node.replaceChildren(...this.slotChildren(slot))
     this.highlightTimer = setTimeout(() => this.clearHighlight(), 3500)
   }
 
   private clearHighlight(): void {
     if (this.highlightTimer !== null) { clearTimeout(this.highlightTimer); this.highlightTimer = null }
-    const box = this.highlight, slot = this.highlightSlot
-    this.highlight = null; this.highlightSlot = null
-    if (box && slot) slot.node.replaceChildren(...this.slotChildren(slot))
+    const shown = this.highlights.length > 0, slot = this.highlightSlot
+    this.highlights = []; this.highlightSlot = null
+    if (shown && slot) slot.node.replaceChildren(...this.slotChildren(slot))
   }
 
   private canPanScroll(): boolean {
@@ -487,6 +567,7 @@ export class PdfPreview {
   private reset(): Promise<void> {
     const loading = this.loading, drawing = this.drawing
     this.clearHighlight()
+    this.texts.clear()
     this.renderVersion++; this.pending = false
     for (const slot of this.slots) this.release(slot)
     this.loading = null; this.document = null; this.drawing = null; this.work = null; this.slots = []; this.width = 0

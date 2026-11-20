@@ -8,7 +8,10 @@ import './file-tree-style.css'
 import './version-panel-style.css'
 import './file-outline-style.css'
 import './workspace-layout-style.css'
+import './comment-style.css'
 import { WorkbenchLayout } from './workbench-layout'
+import type { CommentApi } from '../shared/comment-contracts'
+import { CommentsController } from './comments'
 import { WorkspaceSplitter } from './workspace-splitter'
 import { FileOutline } from './file-outline'
 import { AccountMenu } from './account-menu'
@@ -50,6 +53,8 @@ class Workbench {
   private busy = false
   private compiling = false
   private closing = false
+  /** A successful compile of the current project exists in Main this run, so "Download PDF" has something to save. */
+  private pdfReady = false
   private frozen = new Map<HTMLElement, boolean>()
   private activeExternal: string[] = []
   private pendingExternal = new Set<string>()
@@ -79,6 +84,7 @@ class Workbench {
   private documents: Documents
   private editor: SourceEditor
   private pdf: PdfPreview
+  private comments: CommentsController
 
   constructor(private api: WorkspaceApi) {
     this.editor = new SourceEditor(element('source-editor'), (content) => {
@@ -95,6 +101,12 @@ class Workbench {
       state: (buffer) => this.renderDocument(buffer), files: (files, active) => this.renderFiles(files, active),
       project: (project) => this.renderProject(project), notify: (message) => this.notify(message),
       confirm: (title, detail) => this.dialogs.confirm(title, detail), input: (title, value) => this.dialogs.input(title, value)
+    })
+    this.comments = new CommentsController({
+      api: (window as Window & { paperstudioComments?: CommentApi }).paperstudioComments, pdf: this.pdf,
+      synctex: () => this.synctex, project: () => this.documents.project, notify: message => this.notify(message), run: this.run,
+      readSource: path => this.api.readFile(path).then(snapshot => snapshot.content, () => null),
+      revealSource: (path, line) => { void this.openSourceAt(path, line) }
     })
     this.sync = new SyncPanel(api, this.documents, this.dialogs, this.run,
       (project) => this.adopt(project), (message) => this.notify(message))
@@ -147,6 +159,7 @@ class Workbench {
       this.layout.dispose()
       this.sync.dispose()
       this.splitter.dispose()
+      this.comments.dispose()
       void this.pdf.dispose().catch(() => undefined)
       this.outline?.dispose()
       this.account?.dispose()
@@ -211,6 +224,7 @@ class Workbench {
       element<HTMLButtonElement>('file-save').disabled = !this.documents.buffer.path
       element<HTMLButtonElement>('file-create').disabled = !this.documents.project
       element<HTMLButtonElement>('file-reload').disabled = !this.reloadAvailable()
+      element<HTMLButtonElement>('pdf-download').disabled = !this.pdfReady
     }
     element<HTMLButtonElement>('cancel-compile').disabled = this.closing || !this.compiling
   }
@@ -242,6 +256,7 @@ class Workbench {
     button('file-reload', () => this.run('重新载入', () => this.documents.reload()))
     button('file-copy', () => this.run('另存副本', () => this.documents.create(true)))
     button('compile', () => this.run('本机编译', () => this.compile()))
+    button('pdf-download', () => this.run('下载 PDF', () => this.savePdf()))
     element('main-file').addEventListener('change', () => this.compileIdentity())
     button('cancel-compile', () => { void this.api.cancelCompile().catch((error: unknown) => this.notify(readableError(error))) })
     button('log-clear', () => text('log', ''))
@@ -355,7 +370,9 @@ class Workbench {
   private async adopt(project: ProjectInfo): Promise<void> {
     this.pendingExternal.clear()
     this.synctex = null
+    this.pdfReady = false
     await adoptCommittedProject(project, () => this.pdf.clear(), next => this.documents.adopt(next), message => this.notify(message))
+    this.comments.projectChanged()
     this.showEditor()
     void this.library.refresh()
     text('log', `已打开本地项目：${project.name}\n`)
@@ -438,9 +455,22 @@ class Workbench {
       // covered. The finished compile must not stay "in progress" until the user looks at the window again.
       if (result.ok && result.pdf) {
         this.synctex = result.synctex ?? null
-        void this.pdf.show(result.pdf).catch(() => undefined)
+        this.pdfReady = true
+        // Comments are placed from page text once the document is loaded; painting may wait for a visible window.
+        this.comments.pdfChanging()
+        let placed = false
+        const place = (): void => { if (!placed) { placed = true; this.comments.compiled() } }
+        void this.pdf.show(result.pdf, place).then(place, place)
       }
     } finally { this.compiling = false; this.updateControls() }
+  }
+
+  /** Main shows the native "Save as" dialog and copies its own record of the last good PDF; nothing to say on cancel. */
+  private async savePdf(): Promise<void> {
+    const result = await this.api.savePdf()
+    if (!result.saved) return
+    this.notify(result.stale ? `已保存最近一次编译成功的 PDF：${result.path}。之后的源码改动不在其中，需要时请重新编译后再下载。`
+      : `已保存 PDF：${result.path}`)
   }
 
   private jumpToPdf(location: EditorDoubleClickLocation): void {
@@ -452,14 +482,18 @@ class Workbench {
   private async jumpToSource(location: PdfDoubleClickLocation): Promise<void> {
     if (this.closing || !this.synctex || !this.documents.project) return
     const target = inverseSync(this.synctex, location.page, location.x, location.y)
-    if (!target) return
-    if (target.file !== this.documents.buffer.path) {
-      const exists = this.documents.project.files.some(file => file.path === target.file && file.kind === 'text')
+    if (target) await this.openSourceAt(target.file, target.line, location.word)
+  }
+
+  private async openSourceAt(file: string, line: number, word?: string): Promise<void> {
+    if (this.closing || !this.documents.project) return
+    if (file !== this.documents.buffer.path) {
+      const exists = this.documents.project.files.some(item => item.path === file && item.kind === 'text')
       if (!exists) return
       if (this.busy) { this.notify('正在处理上一项操作，请稍候。'); return }
-      await this.execute('跳转源文件', () => this.documents.open(target.file), false)
+      await this.execute('跳转源文件', () => this.documents.open(file), false)
     }
-    if (this.documents.buffer.path === target.file) this.editor.revealLine(target.line, location.word)
+    if (this.documents.buffer.path === file) this.editor.revealLine(line, word)
   }
 
   private bindClosingInput(): void {
@@ -490,6 +524,7 @@ class Workbench {
     this.repositoryTransfer.setClosing(closing)
     this.updates.setClosing(closing)
     this.language.setClosing(closing)
+    this.comments.setClosing(closing)
     if (closing) {
       for (const node of [document.body, element('editor-panel'), ...document.querySelectorAll<HTMLDialogElement>('dialog')]) {
         this.frozen.set(node, node.inert)
@@ -515,6 +550,7 @@ class Workbench {
     if (event.kind === 'compile-log') { appendLog(event.message); return }
     if (event.kind === 'sync-progress') { this.notify(event.message); return }
     for (const path of event.paths) this.pendingExternal.add(path)
+    this.comments.filesChanged(event.paths)
     this.flushExternal()
   }
 

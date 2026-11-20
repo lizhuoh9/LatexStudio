@@ -6,7 +6,8 @@ import { CredentialVault } from './credentials'
 import { rememberOperationDiagnostic, readOperationDiagnostic } from './operation-diagnostic'
 import { assertProjectDirectory, checkCheckout, headOid, validateTree, workingFiles, type GitReadCache } from './files'
 import { ensureRepository, localChanges, localHistory, saveSnapshot } from './local-history'
-import { emptyMetadata, readMetadata, writeMetadata, type RepositoryMetadata } from './metadata'
+import { author, emptyMetadata, readMetadata, writeMetadata, type RepositoryMetadata } from './metadata'
+import { mergeCommentDivergence } from './comment-merge'
 import { githubTarget, GitHubError, publicError, sameRepository } from './policy'
 import { snapshotRepositoryConnection, snapshotRepositoryOperationOptions, withRepositoryOperation,
   type RepositoryConnectionSettings, type RepositoryOperationOptions, type RepositoryOperationScope } from './repository-operation'
@@ -15,7 +16,9 @@ import { assertWritableProjectAccess, type ReadonlyProjectAccess, type WritableP
 import { assertCloudAccess, cloudBindingForAccess, readCloudBinding, removeCloudBinding, writeCloudBinding } from './cloud-binding'
 export type { RepositoryOperationOptions } from './repository-operation'
 
-/** Conservative, snapshot-first synchronization; never merges or force-updates history.
+/** Conservative, snapshot-first synchronization; never merges file contents or force-updates history.
+ * The one automatic merge is for diverged histories where one side changed only per-device comment logs
+ * (see comment-merge.ts); every other divergence stops as a conflict with both histories kept.
  * Optional cancellation is cooperative: awaited Git/FS writes may leave partial local changes.
  * A push may have been accepted before a cancellation or acknowledgement failure is observed.
  */
@@ -262,6 +265,8 @@ export class GitHubRepository {
         return this.download(metadata, remote, scope)
       }
       if (!await scope.step(() => git.isDescendent({ fs, dir: this.root, oid: local, ancestor: remote }))) {
+        const merged = await scope.mutate(() => mergeCommentDivergence(this.root, local, remote, author(metadata)))
+        if (merged) return this.adoptCommentMerge(metadata, merged, http, scope)
         metadata.conflict = true
         await scope.mutate(() => writeMetadata(this.root, metadata))
         return scope.step(() => this.result(false, false, '同步存在冲突：两边独立历史均已保留，未覆盖或上传；请手动整理。'))
@@ -290,6 +295,24 @@ export class GitHubRepository {
     metadata.conflict = false
     await scope.mutate(() => writeMetadata(this.root, metadata))
     return scope.step(() => this.result(false, true, '远端更改已同步到本地；同步前本地快照可在历史中查看。'))
+  }
+
+  /** A comment-only divergence was merged locally: check out the merge like a download, then upload it. */
+  private async adoptCommentMerge(metadata: RepositoryMetadata, oid: string, http: HttpClient, scope: RepositoryOperationScope): Promise<SyncResult> {
+    await scope.step(() => checkCheckout(this.root, oid))
+    const branch = metadata.connection!.branch
+    await scope.step(() => git.checkout({ fs, dir: this.root, ref: oid, noUpdateHead: true, track: false, force: false, dryRun: true }))
+    await scope.mutate(() => git.checkout({ fs, dir: this.root, ref: oid, noUpdateHead: true, track: false, force: false }))
+    await scope.mutate(() => git.writeRef({ fs, dir: this.root, ref: `refs/heads/${branch}`, value: oid, force: true }))
+    await this.validateOutgoingHistory(scope)
+    if (!await this.upload(metadata, http, scope)) {
+      metadata.conflict = true
+      await scope.mutate(() => writeMetadata(this.root, metadata))
+      return scope.step(() => this.result(false, true, '已在本地合并双方的评论，但远端拒绝上传，可能又有新的更改；请重新同步。'))
+    }
+    metadata.conflict = false
+    await scope.mutate(() => writeMetadata(this.root, metadata))
+    return scope.step(() => this.result(true, true, '已自动合并双方的评论并同步到 GitHub。'))
   }
 
   private async upload(metadata: RepositoryMetadata, http: HttpClient, scope: RepositoryOperationScope): Promise<boolean> {

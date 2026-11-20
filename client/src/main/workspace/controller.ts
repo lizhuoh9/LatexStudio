@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { readdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -24,6 +24,9 @@ import { githubInstallationUrl } from '../collaboration/configuration'
 import { ProjectLibrary, projectIdForRoot } from './project-library'
 import { readProjectLastModified } from './project-modification'
 import { PROJECT_LIBRARY_CHANNELS as P, type ProjectLibraryState } from '../../shared/project-library-contracts'
+import { COMMENT_CHANNELS as M } from '../../shared/comment-contracts'
+import { WorkspaceComments } from '../comments/comment-service'
+import { CompiledPdfExport } from './pdf-export'
 import { translate } from '../../shared/i18n'
 
 type SenderEvent = IpcMainEvent | IpcMainInvokeEvent
@@ -42,6 +45,8 @@ export class WorkspaceController {
   private busy = false
   private readonly vault: CredentialVault
   private readonly linkTrust: CloudLinkTrust
+  private readonly comments: WorkspaceComments
+  private readonly pdfExport: CompiledPdfExport
   private readonly environmentAbort = new AbortController()
   private environmentTask: Promise<TexEnvironment> | null = null
   private closing = false
@@ -57,6 +62,19 @@ export class WorkspaceController {
     this.vault = new CredentialVault(join(dataRoot, 'github-credentials.json'))
     this.library = library ?? new ProjectLibrary(dataRoot)
     this.linkTrust = new CloudLinkTrust(dataRoot)
+    this.comments = new WorkspaceComments(dataRoot, { root: () => this.activeRoot, account: () => {
+      const state = accountService?.status()
+      return state?.phase === 'signed-in' && state.account ? { login: state.account.login, id: state.account.id } : null
+    } })
+    this.pdfExport = new CompiledPdfExport({
+      downloads: () => app.getPath('downloads'), unsaved: () => this.dirty,
+      sources: async () => this.projectService ? this.projectService.fingerprint() : null,
+      choose: async defaultPath => {
+        const result = await dialog.showSaveDialog(this.window, { title: translate('保存 PDF'), defaultPath,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }], properties: ['showOverwriteConfirmation', 'createDirectory'] })
+        return result.canceled || !result.filePath || this.closing || this.window.isDestroyed() ? null : result.filePath
+      }
+    })
     this.cloud = accountService ? new WorkspaceCloud(accountService, this.vault, {
       root: () => this.activeRoot,
       openAuthorization: () => shell.openExternal(githubInstallationUrl()),
@@ -84,6 +102,7 @@ export class WorkspaceController {
     this.registerRepositoryHandlers()
     this.registerCloudHandlers()
     this.registerLibraryHandlers()
+    this.registerCommentHandlers()
     ipcMain.on(C.dirty, (event, value: unknown) => {
       if (this.trusted(event) && typeof value === 'boolean') { this.dirty = value; this.editEpoch += 1 }
     })
@@ -128,6 +147,10 @@ export class WorkspaceController {
     this.handle(C.environment, () => this.environment())
     this.handle(C.compile, value => this.exclusive(() => this.compile(value)))
     this.handle(C.cancelCompile, () => { this.compiler?.cancel() })
+    this.handle(C.savePdf, (...args) => {
+      if (args.length) throw new Error('保存 PDF 不接受路径或其他参数。')
+      return this.exclusive(() => this.pdfExport.save())
+    })
   }
 
   private registerRepositoryHandlers(): void {
@@ -194,6 +217,26 @@ export class WorkspaceController {
       const state = await this.libraryState()
       this.libraryChanged()
       return state
+    }))
+  }
+
+  /** Reading is tolerant and unserialized; every write is one ordinary action, never during a sync or compile. */
+  private registerCommentHandlers(): void {
+    this.handle(M.list, (...args) => {
+      if (args.length) throw new Error('评论列表不接受参数。')
+      return this.comments.list()
+    })
+    this.handle(M.create, (...args) => this.exclusive(() => {
+      if (args.length !== 1) throw new Error('评论请求无效。')
+      return this.comments.create(args[0])
+    }))
+    this.handle(M.reply, (...args) => this.exclusive(() => {
+      if (args.length !== 2) throw new Error('评论请求无效。')
+      return this.comments.reply(args[0], args[1])
+    }))
+    this.handle(M.resolve, (...args) => this.exclusive(() => {
+      if (args.length !== 2) throw new Error('评论请求无效。')
+      return this.comments.setResolved(args[0], args[1])
     }))
   }
 
@@ -344,6 +387,7 @@ export class WorkspaceController {
     this.activeRoot = info.root
     this.unwatch = unwatch
     this.dirty = false
+    this.pdfExport.clear()
     this.libraryChanged()
     return info
   }
@@ -412,8 +456,15 @@ export class WorkspaceController {
 
   private async compile(value: unknown): Promise<unknown> {
     this.requireSaved()
-    if (!this.compiler) throw new Error('请先打开一个本地论文项目。')
-    return this.compiler.run(requireCompile(value))
+    const compiler = this.compiler, project = this.projectService
+    if (!compiler || !project) throw new Error('请先打开一个本地论文项目。')
+    const request = requireCompile(value)
+    // The source fingerprint is taken before the compile copies the project, so later changes read as "stale".
+    const sources = await Promise.resolve().then(() => project.fingerprint()).catch(() => null)
+    const result = await compiler.run(request)
+    // Only a successful compile of the still-active project becomes the PDF that "Download PDF" saves.
+    if (result.ok && result.pdf && compiler === this.compiler) this.pdfExport.record(request.mainFile, result.pdf, sources)
+    return result
   }
 
   private async sync(value: unknown): Promise<unknown> {

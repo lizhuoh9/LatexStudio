@@ -8,6 +8,7 @@ import { PROJECT_LIBRARY_CHANNELS as P, type ProjectLibraryApi } from '../shared
 import { WORKSPACE_CHANNELS as C, type WorkspaceApi, type WorkspaceEvent } from '../shared/workspace-contracts'
 import { TEX_SETUP_CHANNELS as T, type TexSetupApi, type TexSetupState } from '../shared/tex-setup-contracts'
 import { COLLABORATION_CHANNELS as A, type CollaborationApi, type CollaborationState } from '../shared/collaboration-contracts'
+import { COMMENT_CHANNELS as M, type CommentApi } from '../shared/comment-contracts'
 
 const api: WorkspaceApi = Object.freeze<WorkspaceApi>({
   project: () => ipcRenderer.invoke(C.project),
@@ -21,6 +22,7 @@ const api: WorkspaceApi = Object.freeze<WorkspaceApi>({
   environment: () => ipcRenderer.invoke(C.environment),
   compile: request => ipcRenderer.invoke(C.compile, request),
   cancelCompile: () => ipcRenderer.invoke(C.cancelCompile),
+  savePdf: () => ipcRenderer.invoke(C.savePdf),
   repository: () => ipcRenderer.invoke(C.repository),
   connectGitHub: settings => ipcRenderer.invoke(C.connect, settings),
   disconnectGitHub: () => ipcRenderer.invoke(C.disconnect),
@@ -134,3 +136,11 @@ const projects: ProjectLibraryApi = Object.freeze<ProjectLibraryApi>({
   }
 })
 contextBridge.exposeInMainWorld('paperstudioProjects', projects)
+
+const comments: CommentApi = Object.freeze<CommentApi>({
+  list: () => ipcRenderer.invoke(M.list),
+  create: input => ipcRenderer.invoke(M.create, input),
+  reply: (thread, body) => ipcRenderer.invoke(M.reply, thread, body),
+  setResolved: (thread, resolved) => ipcRenderer.invoke(M.resolve, thread, resolved)
+})
+contextBridge.exposeInMainWorld('paperstudioComments', comments)

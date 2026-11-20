@@ -326,3 +326,68 @@ describe('continuous local canvas PDF preview', () => {
     expect(parseFloat(hl!.style.width!)).toBeLessThan(100)
   })
 })
+
+describe('comment support in the PDF preview', () => {
+  function withText(pdf: ReturnType<typeof source>, number: number, items: unknown[]): Mock {
+    const page = pdf.page(number) as ReturnType<typeof pdf.page> & { getTextContent?: Mock }
+    page.getViewport = vi.fn(({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale,
+      convertToViewportPoint: (x: number, y: number) => [x * scale, (800 - y) * scale] }))
+    page.getTextContent = vi.fn(async () => ({ items }))
+    return page.getTextContent
+  }
+
+  it('draws a stable comment overlay between the page bitmap and the selectable text, only on drawn pages', async () => {
+    const overlays = new Map<number, NodeMock>()
+    await open(6)
+    preview!.setOverlay(page => { if (!overlays.has(page)) overlays.set(page, new NodeMock('div')); return overlays.get(page) as unknown as HTMLElement })
+    const drawn = host.children[0]!
+    expect(drawn.children[0]?.tagName).toBe('canvas')
+    expect(drawn.children[1]).toBe(overlays.get(1))
+    expect(host.children[5]!.children).toEqual([])
+    await preview!.scale(.1)
+    expect(host.children[0]!.children[1]).toBe(overlays.get(1))
+    preview!.setOverlay(null)
+    expect(host.children[0]!.children.every(child => child.tagName === 'canvas')).toBe(true)
+  })
+
+  it('reveals a comment by scrolling to it and flashing every line box temporarily, leaving nothing behind', async () => {
+    await open(4)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await preview!.reveal(3, [{ x: 72, y: 300, width: 200, height: 12 }, { x: 72, y: 314, width: 80, height: 12 }])
+      const flashes = () => host.children[2]!.children.filter(child => child.className.includes('pdf-sync-highlight'))
+      const scale = parseFloat(host.children[2]!.style.width!) / 600
+      expect(flashes()).toHaveLength(2)
+      expect(parseFloat(flashes()[0]!.style.left!)).toBeCloseTo(72 * scale - 2, 5)
+      expect(parseFloat(flashes()[1]!.style.width!)).toBeCloseTo(80 * scale + 4, 5)
+      expect(position.textContent).toContain('3 / 4')
+      vi.advanceTimersByTime(3600)
+      expect(flashes()).toHaveLength(0)
+      await preview!.reveal(9, [{ x: 1, y: 1, width: 1, height: 1 }])
+      await preview!.reveal(2, [])
+      expect(host.children.every(page => page.children.every(child => !child.className.includes('pdf-sync-highlight')))).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('reads page text once per document as top-left boxes in PDF points and forgets it with the document', async () => {
+    const pdf = source(3, 600, 800)
+    const read = withText(pdf, 2, [{ str: 'Results', transform: [10, 0, 0, 10, 100, 700], width: 40, height: 10 }, { str: '', transform: [1, 0, 0, 1, 0, 0] }, { type: 'beginMarkedContent' }])
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify); await preview.show(new Uint8Array([1]))
+    const text = await preview.pageText(2)
+    expect(text).toMatchObject({ width: 600, height: 800 })
+    expect(text!.items).toHaveLength(1)
+    expect(text!.items[0]).toMatchObject({ str: 'Results', x: 100, width: 40 })
+    expect(text!.items[0]!.y).toBeCloseTo(800 - 709, 5)
+    expect(text!.items[0]!.height).toBeCloseTo(11.2, 5)
+    await preview.pageText(2)
+    expect(read).toHaveBeenCalledOnce()
+    expect(await preview.pageText(0)).toBeNull(); expect(await preview.pageText(4)).toBeNull()
+    expect(await preview.pageSize(2)).toEqual({ width: 600, height: 800 })
+    expect(preview.pageCount).toBe(3)
+    await preview.show(new Uint8Array([2]))
+    await preview.pageText(2)
+    expect(read).toHaveBeenCalledTimes(2)
+    await preview.clear()
+    expect(preview.pageCount).toBe(0); expect(await preview.pageText(1)).toBeNull()
+  })
+})
