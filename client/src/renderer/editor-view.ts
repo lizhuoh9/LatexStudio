@@ -9,6 +9,7 @@ import { latexIndentService } from '../vendor/ayakaleaf/latex-indent-service'
 import { latexCompletions } from './latex-completions'
 import { subscribeLocale, translate } from '../shared/i18n'
 import { editorPhrases } from './editor-phrases'
+import { EDITOR_FONT_FAMILY } from './editor-font'
 
 export interface EditorDoubleClickLocation {
   line: number
@@ -104,7 +105,7 @@ export class SourceEditor {
       }),
       this.language.of(this.languageExtensions()),
       EditorView.theme({ '&': { height: '100%', fontSize: '13.5px', lineHeight: '1.65' },
-        '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, monospace' },
+        '.cm-scroller': { overflow: 'auto', fontFamily: EDITOR_FONT_FAMILY },
         '.cm-content': { padding: '16px 0' }, '.cm-gutters': { backgroundColor: '#fafbfe', borderRight: '1px solid #e9edf5', paddingRight: '4px' },
         '.cm-activeLine': { backgroundColor: 'rgba(59, 88, 235, 0.12)' },
         '.cm-line.cm-sync-flash': { backgroundColor: 'rgba(251, 191, 36, 0.42) !important', boxShadow: 'inset 4px 0 0 #ea580c', borderRadius: '2px' },
