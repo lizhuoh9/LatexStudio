@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { link, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VersionHistory } from '../src/main/local/version-history'
+import { HistoryStore } from '../src/main/local/history-store'
 import { digest } from '../src/main/local/paths'
 import { UNKNOWN_AUTHOR } from '../src/main/local/history-validation'
 
@@ -198,5 +199,40 @@ describe('shared file version history', () => {
     await symlink(outside, join(root, '.paperstudio', 'history-v1'), process.platform === 'win32' ? 'junction' : 'dir')
     await expect(history.prepare({ path: 'main.tex', before: null, after: Buffer.from('x') })).rejects.toThrow('真实目录')
     expect(await readdir(outside)).toEqual([])
+  })
+  it('checks the history folders around a whole listing, not around each stored file, while still reading every file', async () => {
+    // Arrange
+    const { root, history, base } = await setup()
+    await apply(history, root, null, 'v0')
+    for (let index = 1; index <= 12; index++) await apply(history, root, `v${index - 1}`, `v${index}`)
+    const checks = vi.spyOn(HistoryStore.prototype, 'initialize')
+
+    // Act
+    const entries = await history.list()
+
+    // Assert
+    expect(entries).toHaveLength(13)
+    expect(await readdir(join(base, 'objects'))).toHaveLength(13)
+    // list() itself, then once before and once after the records batch and the objects batch.
+    expect(checks.mock.calls.length).toBe(5)
+    checks.mockRestore()
+  })
+  it('still refuses an old stored version that was altered in place, when listing and before the next save', async () => {
+    const { root, history, base } = await setup()
+    await apply(history, root, null, 'first')
+    await apply(history, root, 'first', 'second')
+    await apply(history, root, 'second', 'third')
+    await writeFile(join(base, 'objects', digest(Buffer.from('first'))), 'forged')
+    await expect(history.list()).rejects.toThrow('哈希不匹配')
+    await expect(history.prepare({ path: 'main.tex', before: Buffer.from('third'), after: Buffer.from('fourth') })).rejects.toThrow('哈希不匹配')
+    expect(await readFile(join(root, 'main.tex'), 'utf8')).toBe('third')
+  })
+  it('refuses a listing when a history folder is redirected, whichever stored file is being read', async () => {
+    const { root, history, base } = await setup(), elsewhere = await mkdtemp(join(tmpdir(), 'paperstudio-version-history-')); roots.push(elsewhere)
+    await apply(history, root, null, 'first')
+    await apply(history, root, 'first', 'second')
+    await rename(join(base, 'objects'), join(elsewhere, 'objects'))
+    await symlink(join(elsewhere, 'objects'), join(base, 'objects'), process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(history.list()).rejects.toThrow()
   })
 })

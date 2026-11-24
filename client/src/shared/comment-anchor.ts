@@ -226,6 +226,19 @@ export function locateInPdfPage(page: PdfPageIndex, context: QuoteContext, hint?
   return found ? match(page, page.tokens[found.start]!.start, page.tokens[found.end - 1]!.end, false) : null
 }
 
+/** Every occurrence of the query on one page in reading order, one rect list (PDF points) per occurrence.
+ * Uses the folded key, so case, accents, punctuation, spacing, line breaks and hyphenation do not matter;
+ * occurrences never overlap. A query without letters or digits finds nothing.
+ */
+export function findAllInPdfPage(page: PdfPageIndex, query: string, limit: number): PdfTextRect[][] {
+  const key = quoteKey(query), found: PdfTextRect[][] = []
+  if (!key) return found
+  for (let start = page.key.indexOf(key); start >= 0 && found.length < limit; start = page.key.indexOf(key, start + key.length)) {
+    found.push(match(page, start, start + key.length, true).rects)
+  }
+  return found
+}
+
 function match(page: PdfPageIndex, start: number, end: number, exact: boolean): PdfMatch {
   const ranges = new Map<number, { first: number; last: number }>()
   for (let k = start; k < end; k++) {

@@ -19,7 +19,7 @@ vi.mock('node:fs', () => ({ default: {} }))
 vi.mock('node:fs/promises', () => ({ readdir: fake.readdir }))
 vi.mock('isomorphic-git', () => ({ default: fake.git }))
 vi.mock('../src/main/github/credentials', () => ({ CredentialVault: class {} }))
-vi.mock('../src/main/github/files', () => ({ assertProjectDirectory: fake.assertDirectory, workingFiles: fake.files,
+vi.mock('../src/main/github/files', () => ({ assertProjectDirectory: fake.assertDirectory, assertWorkingFiles: fake.files,
   headOid: fake.head, validateTree: fake.validate, checkCheckout: fake.collision }))
 vi.mock('../src/main/github/local-history', () => ({ ensureRepository: fake.ensure, localChanges: fake.changes,
   localHistory: fake.history, saveSnapshot: fake.snapshot }))

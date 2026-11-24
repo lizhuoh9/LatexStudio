@@ -5,7 +5,6 @@ import type { RevisionDetail, RevisionEntry } from '../../shared/workspace-contr
 import { code, decodeText, digest, LIMITS, projectPath } from './paths'
 import { HistoryStore } from './history-store'
 import { cleanHistoryLabel, HISTORY_ID, historyFailure, parseHistoryRecord, serializeHistoryEntry, UNKNOWN_AUTHOR } from './history-validation'
-import { mapVerification } from '../tex/verification'
 
 export interface VersionChange {
   path: string
@@ -105,12 +104,13 @@ export class VersionHistory {
       return null
     }
   }
-  /** Every record and object is read and verified exactly as before; bounded batches only overlap the file I/O,
-   * and the first failure in listing order is still the one reported.
+  /** Every record and object is read and verified; bounded batches only overlap the file I/O, the history
+   * directories are checked around each batch (not around each file), and the first failure in listing order is
+   * still the one reported.
    */
   private async entries(bucket: 'entries' | 'pending'): Promise<RevisionEntry[]> {
-    return mapVerification(await this.store.names(bucket), async name => {
-      const entry = parseHistoryRecord(await this.store.read(bucket, name))
+    return this.store.readEach(bucket, await this.store.names(bucket), (name, bytes) => {
+      const entry = parseHistoryRecord(bytes)
       if (`${entry.id}.json` !== name) throw historyFailure('历史编号与文件不一致')
       return entry
     })
@@ -118,7 +118,7 @@ export class VersionHistory {
   private async verifyObjects(entries: RevisionEntry[]): Promise<void> {
     const hashes = new Set<string>()
     for (const entry of entries) for (const hash of [entry.beforeRevision, entry.afterRevision]) if (hash) hashes.add(hash)
-    await mapVerification([...hashes], async hash => { decodeText(await this.store.read('objects', hash)) })
+    await this.store.readEach('objects', [...hashes], (_hash, bytes) => { decodeText(bytes) })
   }
   private async reserveAndWrite(change: VersionChange, entries: RevisionEntry[]): Promise<void> {
     const objects = new Map<string, Buffer>()

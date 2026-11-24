@@ -4,7 +4,7 @@ import { EditorState, Transaction, type TransactionSpec } from '@codemirror/stat
 import { EditorView } from '@codemirror/view'
 import { history, undoDepth } from '@codemirror/commands'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { FileOutline, MAX_OUTLINE_CHARACTERS, MAX_OUTLINE_ITEMS, MAX_OUTLINE_TITLE, parseFileOutline } from '../src/renderer/file-outline'
+import { FileOutline, MAX_OUTLINE_CHARACTERS, MAX_OUTLINE_ITEMS, MAX_OUTLINE_TITLE, OUTLINE_TYPING_DELAY_MS, parseFileOutline } from '../src/renderer/file-outline'
 import { SourceEditor } from '../src/renderer/editor-view'
 
 describe('bounded current-source LaTeX outline parser', () => {
@@ -141,6 +141,41 @@ text
     panel.update(String.raw`\section{Intro}` + '\nhello world')
     expect(buttons(host)[0]).toBe(first)
     buttons(host)[0]!.click(); expect(reveal).toHaveBeenCalledExactlyOnceWith(1)
+  })
+  it('re-reads the outline once after a run of typed edits and shows the latest text, not every keystroke', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      // Arrange
+      const view = mount('\\section{One}\n')
+      const rebuilt = vi.spyOn(host, 'replaceChildren')
+
+      // Act: three edits inside one wait
+      view.updateSoon('\\section{One}\n\\section{T}\n')
+      view.updateSoon('\\section{One}\n\\section{Tw}\n')
+      vi.advanceTimersByTime(OUTLINE_TYPING_DELAY_MS - 1)
+      view.updateSoon('\\section{One}\n\\section{Two}\n')
+
+      // Assert: nothing yet, then exactly one rebuild with the last text, at the original deadline
+      expect(rebuilt).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(rebuilt).toHaveBeenCalledTimes(1)
+      expect(buttons(host).map(button => button.textContent)).toEqual(['One', 'Two'])
+      vi.advanceTimersByTime(OUTLINE_TYPING_DELAY_MS * 3)
+      expect(rebuilt).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+  it('lets an opened file replace a typed edit that is still waiting, and ignores waiting edits after disposal', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const view = mount('\\section{Old}\n')
+      view.updateSoon('\\section{Typed}\n')
+      view.update('\\section{Opened file}\n')
+      vi.advanceTimersByTime(OUTLINE_TYPING_DELAY_MS * 2)
+      expect(buttons(host).map(button => button.textContent)).toEqual(['Opened file'])
+      view.updateSoon('\\section{Late}\n'); view.dispose()
+      vi.advanceTimersByTime(OUTLINE_TYPING_DELAY_MS * 2)
+      expect(host.children).toEqual([])
+    } finally { vi.useRealTimers() }
   })
   it('blocks current and stale clicks during closing, then remounts usable controls on canceled close', () => {
     const panel = mount(String.raw`\section{Current}`), old = buttons(host)[0]!

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import git from 'isomorphic-git'
 import type { FileChange, HistoryEntry } from '../../shared/workspace-contracts'
-import { hasRepository, headOid, workingFiles } from './files'
+import { assertWorkingFiles, hasRepository, headOid } from './files'
 import { author, publicText, type RepositoryMetadata } from './metadata'
 import { excluded, GitHubError, safePath } from './policy'
 
@@ -10,7 +10,7 @@ export async function ensureRepository(root: string): Promise<void> {
 }
 
 export async function localChanges(root: string): Promise<FileChange[]> {
-  await workingFiles(root)
+  await assertWorkingFiles(root)
   const tracked = await git.listFiles({ fs, dir: root })
   for (const path of tracked) {
     safePath(root, path)

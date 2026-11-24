@@ -58,6 +58,9 @@ async function start(): Promise<void> {
   const controller = new WorkspaceController(window, url, dataRoot, async () => {
     await Promise.all([setup.cancelAndWait(), collaboration.cancelAndWait()])
   }, collaboration.service)
+  const paceFileWatch = (): void => { if (!window.isDestroyed()) controller.setWindowHidden(window.isMinimized() || !window.isVisible()) }
+  window.on('minimize', paceFileWatch); window.on('restore', paceFileWatch)
+  window.on('hide', paceFileWatch); window.on('show', paceFileWatch)
   setup.register()
   collaboration.register()
   const updates = new UpdateController(window, url)

@@ -4,7 +4,7 @@ import git, { type HttpClient } from 'isomorphic-git'
 import type { GitHubConnection, GitHubSettings, HistoryEntry, RepositoryStatus, SyncResult } from '../../shared/workspace-contracts'
 import { CredentialVault } from './credentials'
 import { rememberOperationDiagnostic, readOperationDiagnostic } from './operation-diagnostic'
-import { assertProjectDirectory, checkCheckout, headOid, validateTree, workingFiles, type GitReadCache } from './files'
+import { assertProjectDirectory, assertWorkingFiles, checkCheckout, headOid, validateTree, type GitReadCache, type ValidatedTrees } from './files'
 import { ensureRepository, localChanges, localHistory, saveSnapshot } from './local-history'
 import { author, emptyMetadata, readMetadata, writeMetadata, type RepositoryMetadata } from './metadata'
 import { mergeCommentDivergence } from './comment-merge'
@@ -35,7 +35,7 @@ export class GitHubRepository {
     return this.connectionOperation(settings, options, async (scope, { target, token }) => {
       await scope.step(() => this.requireLegacyRoute())
       await scope.mutate(() => ensureRepository(this.root))
-      await scope.step(() => workingFiles(this.root))
+      await scope.step(() => assertWorkingFiles(this.root))
       const origin = await scope.step(() => git.getConfig({ fs, dir: this.root, path: 'remote.origin.url' }))
       if (origin && !sameRepository(origin, target.url)) throw new GitHubError('此项目已关联其他远端，未修改原关联；请先明确解除关联或使用空目录下载。')
       const identity = await scope.step(() => verifyGitHub(target, token, { signal: scope.signal }))
@@ -103,7 +103,7 @@ export class GitHubRepository {
   connectWithAccess(access: ReadonlyProjectAccess, options: RepositoryOperationOptions = {}): Promise<GitHubConnection> {
     return this.accessOperation(access, options, async scope => {
       await scope.mutate(() => ensureRepository(this.root))
-      await scope.step(() => workingFiles(this.root))
+      await scope.step(() => assertWorkingFiles(this.root))
       const previous = await scope.step(() => readCloudBinding(this.root))
       if (previous) assertCloudAccess(previous, access)
       const origin = await scope.step(() => git.getConfig({ fs, dir: this.root, path: 'remote.origin.url' }))
@@ -330,10 +330,12 @@ export class GitHubRepository {
   private async validateOutgoingHistory(scope: RepositoryOperationScope): Promise<void> {
     const entries = await scope.step(() => git.log({ fs, dir: this.root, depth: 1000 }))
     if (entries.length >= 1000) throw new GitHubError('历史过长，无法在安全限额内检查；本地快照已保留。')
-    const inspected = new Set<string>(), cache: GitReadCache = {} // one pass over this history, nothing written in between
+    // One pass over this history, nothing written in between: commits sharing a root tree are checked once, and so
+    // is every folder that did not change between two commits.
+    const inspected = new Set<string>(), validated: ValidatedTrees = new Map(), cache: GitReadCache = {}
     for (const entry of entries) {
       scope.check()
-      if (!inspected.has(entry.commit.tree)) await scope.step(() => validateTree(this.root, entry.oid, cache))
+      if (!inspected.has(entry.commit.tree)) await scope.step(() => validateTree(this.root, entry.oid, cache, validated))
       inspected.add(entry.commit.tree)
     }
   }

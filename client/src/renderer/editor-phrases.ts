@@ -14,7 +14,11 @@ const phrases: ReadonlyArray<readonly [string, string, string]> = [
   ['current match', '当前匹配项', '현재 일치 항목'], ['on line', '所在行', '줄'],
   ['replaced match on line $', '已替换第 $ 行的匹配项', '$줄의 일치 항목을 바꿨습니다'],
   ['replaced $ matches', '已替换 $ 个匹配项', '일치 항목 $개를 바꿨습니다'],
-  ['Completions', '补全建议', '자동 완성 제안'], ['No completions', '没有补全建议', '자동 완성 제안 없음']
+  ['Completions', '补全建议', '자동 완성 제안'], ['No completions', '没有补全建议', '자동 완성 제안 없음'],
+  ['Match case', '区分大小写', '대소문자 구분'], ['Whole word', '全字匹配', '단어 단위'],
+  ['Regular expression', '正则表达式', '정규식'], ['Previous match', '上一处', '이전 항목'], ['Next match', '下一处', '다음 항목'],
+  ['Close', '关闭', '닫기'], ['Replace all', '全部替换', '모두 바꾸기'], ['Show or hide replace', '显示或隐藏替换', '바꾸기 표시 또는 숨기기'],
+  ['No results', '无结果', '결과 없음'], ['Invalid pattern', '正则表达式无效', '잘못된 정규식']
 ]
 export function editorPhrases(): Record<string, string> {
   const locale = getLocale()

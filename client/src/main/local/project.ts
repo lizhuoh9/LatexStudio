@@ -18,11 +18,15 @@ export interface ProjectServiceOptions {
   beforeWrite?: (project: SafeProject, change: ProjectWrite) => Promise<ProjectWriteReceipt | void>
 }
 export interface SaveOptions { kind?: 'save' | 'restore'; summary?: string }
+const WATCH_INTERVAL_MS = 500, WATCH_BACKGROUND_MS = 5000, WATCH_REST_FACTOR = 2
 
 export class ProjectService {
   private readonly project: SafeProject
   private listeners = new Set<(paths: string[]) => void>()
-  private timer: ReturnType<typeof setInterval> | undefined
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private interval = WATCH_INTERVAL_MS
+  private scanning = false
+  private background = false
   private fingerprints = new Map<string, string>()
   private polling = false
   private disposed = false
@@ -99,24 +103,46 @@ export class ProjectService {
       throw error
     }
   }
-  /** `intervalMs`: 500 ms locally; shared (SMB) folders poll less often because every scan is many round-trips. */
-  watch(listener: (paths: string[]) => void, intervalMs = 500): () => void {
+  /** `intervalMs`: 500 ms locally; shared (SMB) folders poll less often because every scan is many round-trips.
+   * The wait is counted from the END of a scan and is never shorter than twice that scan's duration, so a large
+   * project is not being walked most of the time.
+   */
+  watch(listener: (paths: string[]) => void, intervalMs = WATCH_INTERVAL_MS): () => void {
     this.assertActive()
     this.listeners.add(listener)
-    if (!this.timer) {
-      this.timer = setInterval(() => { void this.poll() }, intervalMs)
-      this.timer.unref()
-    }
+    this.interval = intervalMs
+    if (!this.timer && !this.scanning) this.schedule(intervalMs)
     return () => {
       this.listeners.delete(listener)
-      if (!this.listeners.size && this.timer) { clearInterval(this.timer); this.timer = undefined }
+      if (!this.listeners.size && this.timer) { clearTimeout(this.timer); this.timer = undefined }
     }
+  }
+  /** While nobody can see the window (minimised or hidden) changes are looked for every few seconds only; coming
+   * back looks at once, so an external edit is shown as soon as the window is.
+   */
+  setBackground(background: boolean): void {
+    if (this.background === background) return
+    this.background = background
+    if (!background && this.timer) { clearTimeout(this.timer); this.schedule(0) }
   }
   dispose(): void {
     this.disposed = true
-    if (this.timer) clearInterval(this.timer)
+    if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     this.listeners.clear()
+  }
+  private schedule(delay: number): void {
+    this.timer = setTimeout(() => { void this.tick() }, delay)
+    this.timer.unref()
+  }
+  private async tick(): Promise<void> {
+    this.timer = undefined
+    this.scanning = true
+    const started = Date.now()
+    try { await this.poll() } finally { this.scanning = false }
+    if (this.disposed || !this.listeners.size || this.timer) return
+    const rest = Math.max(this.background ? WATCH_BACKGROUND_MS : this.interval, (Date.now() - started) * WATCH_REST_FACTOR)
+    this.schedule(rest)
   }
   private assertActive(): void { if (this.disposed) throw failure('项目已关闭') }
   private serial<T>(operation: () => Promise<T>): Promise<T> {

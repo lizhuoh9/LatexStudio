@@ -23,6 +23,7 @@ import { CloudLinkTrust } from './cloud-link-trust'
 import { githubInstallationUrl } from '../collaboration/configuration'
 import { ProjectLibrary, projectIdForRoot } from './project-library'
 import { readProjectLastModified } from './project-modification'
+import { mapVerification } from '../tex/verification'
 import { PROJECT_LIBRARY_CHANNELS as P, type ProjectLibraryState } from '../../shared/project-library-contracts'
 import { COMMENT_CHANNELS as M } from '../../shared/comment-contracts'
 import { WorkspaceComments } from '../comments/comment-service'
@@ -42,6 +43,7 @@ export class WorkspaceController {
   private repositoryService: RepositoryService | null = null
   private unwatch: (() => void) | null = null
   private dirty = false
+  private windowHidden = false
   private busy = false
   private readonly vault: CredentialVault
   private readonly linkTrust: CloudLinkTrust
@@ -242,14 +244,16 @@ export class WorkspaceController {
 
   private async libraryState(): Promise<ProjectLibraryState> {
     const entries = await this.library.list()
-    const projects = await Promise.all(entries.map(async entry => {
+    // A few projects at a time: 50 folder scans at once only queue behind each other on the file thread pool
+    // and delay a save or compile started meanwhile. Row order is the registry order either way.
+    const projects = await mapVerification(entries, async entry => {
       const display = { ...entry, lastModifiedAt: await readProjectLastModified(entry.root) }
       if (!this.accountService) return { ...display, github: null }
       try {
         const binding = await readCloudBinding(entry.root)
         return { ...display, github: binding ? { owner: binding.owner, name: binding.name } : null }
       } catch { return { ...display, github: null, syncIssue: true } }
-    }))
+    })
     return { projects, activeId: this.activeRoot ? projectIdForRoot(this.activeRoot) : null }
   }
 
@@ -370,6 +374,7 @@ export class WorkspaceController {
       unwatch = next.watch(paths => {
         if (this.projectService === next) this.send({ kind: 'files-changed', paths })
       })
+      next.setBackground(this.windowHidden)
       await this.library.remember(info)
       if (signal?.aborted) throw new Error('已取消切换项目，现有草稿与工作区保留。')
       // No await between this session check and the synchronous workspace commit below.
@@ -567,6 +572,12 @@ export class WorkspaceController {
       this.clearCloseWait()
       if (!accepted) this.restoreCloseUi()
     }
+  }
+
+  /** Called when the window is minimised/hidden or shown again; only paces the file-change scan. */
+  setWindowHidden(hidden: boolean): void {
+    this.windowHidden = hidden
+    this.projectService?.setBackground(hidden)
   }
 
   dispose(): void {

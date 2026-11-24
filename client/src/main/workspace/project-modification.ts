@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs'
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { SafeProject, skipped } from '../local/paths'
@@ -29,23 +30,22 @@ function contentFile(path: string, generatedPdf: Set<string>): boolean {
 }
 
 /** Display-only, read-only mtime aggregation. Never reads file bytes or treats registry recency as modification.
- * SafeProject supplies the existing depth/10,000-entry/path/no-symlink bounds. Any incomplete scan is unknown.
+ * SafeProject supplies the existing depth/10,000-entry/path/no-symlink bounds, and the lstat sample that passed
+ * those checks for each listed file is the one whose mtime is used. Any incomplete scan is unknown.
  */
 export async function readProjectLastModified(root: string): Promise<string | null> {
   try {
     const project = new SafeProject(root)
     await realParents(project.root)
     await project.initialize()
-    const files = await project.list()
+    const samples = new Map<string, Stats>()
+    const files = await project.list(false, (file, info) => { samples.set(file.path, info) })
     const generatedPdf = new Set(files.filter(file => /\.tex$/i.test(file.path)).map(file => file.path.replace(/\.tex$/i, '.pdf').toLowerCase()))
     let latest: number | null = null
     for (const file of files) {
       if (!contentFile(file.path, generatedPdf)) continue
-      const path = await project.resolve(file.path), info = await lstat(path)
-      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || !Number.isFinite(info.mtimeMs)) return null
-      const current = await lstat(await project.resolve(file.path))
-      if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || current.dev !== info.dev ||
-        current.ino !== info.ino || current.mtimeMs !== info.mtimeMs || current.ctimeMs !== info.ctimeMs) return null
+      const info = samples.get(file.path)
+      if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || !Number.isFinite(info.mtimeMs)) return null
       latest = latest === null ? info.mtimeMs : Math.max(latest, info.mtimeMs)
     }
     await project.verifyRoot()

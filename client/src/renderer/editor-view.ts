@@ -10,6 +10,7 @@ import { latexCompletions } from './latex-completions'
 import { subscribeLocale, translate } from '../shared/i18n'
 import { editorPhrases } from './editor-phrases'
 import { EDITOR_FONT_FAMILY } from './editor-font'
+import { sourceSearch } from './editor-search-panel'
 
 export interface EditorDoubleClickLocation {
   line: number
@@ -84,7 +85,7 @@ export class SourceEditor {
     this.extensions = [
       lineNumbers(), history(), drawSelection(), highlightActiveLine(), foldGutter(), syncFlashField,
       bracketMatching(), closeBrackets(), StreamLanguage.define(stex),
-      syntaxHighlighting(defaultHighlightStyle), latexIndentService(), highlightSelectionMatches(),
+      syntaxHighlighting(defaultHighlightStyle), latexIndentService(), highlightSelectionMatches(), sourceSearch(),
       autocompletion({ override: [latexCompletions] }), EditorView.lineWrapping,
       keymap.of([{ key: 'Mod-s', run: () => { save(); return true } }, indentWithTab,
         ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
@@ -135,7 +136,8 @@ export class SourceEditor {
   }
 
   runCommand(command: 'undo' | 'redo' | 'bold' | 'italic' | 'search'): void {
-    if (command === 'search') { openSearchPanel(this.view); this.view.focus(); return }
+    // The panel focuses its own field; focusing the text here would leave the user typing into the paper.
+    if (command === 'search') { openSearchPanel(this.view); return }
     if (this.view.state.facet(EditorState.readOnly)) return
     if (command === 'undo' || command === 'redo') { (command === 'undo' ? undo : redo)(this.view); this.view.focus(); return }
     const { from, to } = this.view.state.selection.main

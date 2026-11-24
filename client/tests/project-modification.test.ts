@@ -66,6 +66,20 @@ describe('read-only display metadata for real project modification', () => {
     expect(after.mtimeMs).toBe(before.mtimeMs); expect(after.ctimeMs).toBe(before.ctimeMs); expect(after.mode).toBe(before.mode)
     expect(after.ino).toBe(before.ino); expect(await actual.readFile(source)).toEqual(bytes)
   })
+  it('takes each time from the walk that verified the file instead of looking every file up again', async () => {
+    // Arrange
+    const root = await folder()
+    for (let index = 0; index < 30; index++) await content(root, `chapters/part/section${index}.tex`, index === 17 ? UPDATED : SOURCE)
+    vi.mocked(files.lstat).mockClear()
+
+    // Act
+    const latest = await readProjectLastModified(root)
+
+    // Assert
+    expect(latest).toBe(UPDATED)
+    const inProject = vi.mocked(files.lstat).mock.calls.filter(([path]) => String(path).startsWith(join(root, 'chapters')))
+    expect(inProject.length).toBe(32) // the two folders and the thirty files, once each
+  })
   it('shows unknown for a missing root, an empty project or projects containing only build output', async () => {
     const parent = await folder(); expect(await readProjectLastModified(join(parent, 'missing'))).toBeNull()
     const root = await folder(); expect(await readProjectLastModified(root)).toBeNull()

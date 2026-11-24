@@ -29,6 +29,7 @@ import { forwardSync, inverseSync, type SyncTexData } from '../shared/synctex'
 import { Documents } from './documents'
 import { SourceEditor, type EditorDoubleClickLocation } from './editor-view'
 import { PdfPreview, type PdfDoubleClickLocation } from './pdf-view'
+import { PdfFind } from './pdf-find'
 import { Dialogs } from './dialogs'
 import { appendLog, button, element, text } from './dom'
 import { renderFiles } from './file-tree'
@@ -70,6 +71,7 @@ class Workbench {
   private splitter: WorkspaceSplitter
   private outline: FileOutline | null = null
   private lastOutlineContent: string | null = null
+  private typing = false
   private lastMainTexList = ''
   private synctex: SyncTexData | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,11 +86,14 @@ class Workbench {
   private documents: Documents
   private editor: SourceEditor
   private pdf: PdfPreview
+  private pdfFind: PdfFind
   private comments: CommentsController
 
   constructor(private api: WorkspaceApi) {
     this.editor = new SourceEditor(element('source-editor'), (content) => {
-      if (!this.closing) this.documents.edited(content)
+      if (this.closing) return
+      this.typing = true
+      try { this.documents.edited(content) } finally { this.typing = false }
     },
       () => this.run('保存文件', async () => { await this.documents.save() }),
       location => { void this.jumpToPdf(location) })
@@ -96,6 +101,7 @@ class Workbench {
     this.layout = new WorkbenchLayout(() => this.showHome())
     this.splitter = new WorkspaceSplitter()
     this.pdf = new PdfPreview((message) => this.notify(message), location => { void this.jumpToSource(location) })
+    this.pdfFind = new PdfFind(this.pdf, () => !this.closing, message => this.notify(message))
     this.documents = new Documents(api, {
       show: (content, readOnly) => this.editor.show(content, readOnly),
       state: (buffer) => this.renderDocument(buffer), files: (files, active) => this.renderFiles(files, active),
@@ -160,6 +166,7 @@ class Workbench {
       this.sync.dispose()
       this.splitter.dispose()
       this.comments.dispose()
+      this.pdfFind.dispose()
       void this.pdf.dispose().catch(() => undefined)
       this.outline?.dispose()
       this.account?.dispose()
@@ -400,7 +407,9 @@ class Workbench {
   private renderDocument(buffer: EditorBuffer): void {
     if (this.lastOutlineContent !== buffer.content) {
       this.lastOutlineContent = buffer.content
-      this.outline?.update(buffer.content)
+      // Typing re-reads the outline after a short wait; opening, reloading or replacing a file shows it at once.
+      if (this.typing) this.outline?.updateSoon(buffer.content)
+      else this.outline?.update(buffer.content)
     }
     if (buffer.path) text('active-file', buffer.path)
     else uiText(element('active-file'), '源文件')

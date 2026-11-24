@@ -54,7 +54,8 @@ export class PdfPreview {
   private highlights: HTMLDivElement[] = []
   private highlightSlot: PageSlot | null = null
   private highlightTimer: ReturnType<typeof setTimeout> | null = null
-  private overlay: ((page: number) => HTMLElement | null) | null = null
+  private overlays = new Map<string, (page: number) => HTMLElement | null>()
+  private documentListener: (() => void) | null = null
   private texts = new Map<number, Promise<PdfPageText | null>>()
   private host = element('pdf-pages')
   private scroll = this.host.closest<HTMLElement>('.pdf-scroll')
@@ -146,6 +147,7 @@ export class PdfPreview {
       this.page = 1; this.ratio = Math.SQRT2; this.lastError = ''
       this.mount(document.numPages)
       element('pdf-empty').hidden = true
+      this.documentChanged()
       try { mounted?.() } catch { /* A listener must not turn a loaded preview into a failed one. */ }
       await this.schedule()
     } catch (error) {
@@ -200,9 +202,9 @@ export class PdfPreview {
   }
 
   /** Scrolls to a comment's text (PDF points, one rect per line) and flashes every line the same temporary way
-   * as a SyncTeX jump; nothing stays on the page afterwards.
+   * as a SyncTeX jump; nothing stays on the page afterwards. `flash` false only scrolls (a search hit has its own mark).
    */
-  async reveal(page: number, rects: readonly { x: number; y: number; width: number; height: number }[]): Promise<void> {
+  async reveal(page: number, rects: readonly { x: number; y: number; width: number; height: number }[], flash = true): Promise<void> {
     const owner = this.document, scroll = this.scroll, slot = this.slots[page - 1]
     if (!owner || !scroll || !slot || this.disposed || !rects.length) return
     await this.ensurePageDimensions(owner, slot)
@@ -211,7 +213,7 @@ export class PdfPreview {
     const boxes = rects.map(rect => ({ x: Math.max(0, rect.x * scaleX - 2), y: Math.max(0, rect.y * scaleY - 2),
       width: rect.width * scaleX + 4, height: rect.height * scaleY + 4 }))
     this.scrollToBox(scroll, slot, boxes[0]!.x, boxes[0]!.y, boxes[0]!.width)
-    this.showHighlight(slot, boxes)
+    if (flash) this.showHighlight(slot, boxes)
     await this.schedule()
   }
 
@@ -261,13 +263,22 @@ export class PdfPreview {
     } catch { return target } finally { page.cleanup() }
   }
 
-  /** A stable per-page element drawn between the page bitmap and the text layer (comment highlights). */
-  setOverlay(provider: ((page: number) => HTMLElement | null) | null): void {
-    this.overlay = provider
+  /** A stable per-page element drawn between the page bitmap and the text layer; one provider per named layer
+   * (comment highlights, search hits).
+   */
+  setOverlay(provider: ((page: number) => HTMLElement | null) | null, layer = 'comments'): void {
+    if (provider) this.overlays.set(layer, provider); else this.overlays.delete(layer)
     for (const slot of this.slots) if (slot.canvas) slot.node.replaceChildren(...this.slotChildren(slot))
   }
 
+  /** Runs when a document's pages become readable and again when the document goes away. */
+  setDocumentListener(listener: (() => void) | null): void { this.documentListener = listener }
+  /** A failing listener is reported but must not turn a loaded preview into a failed one. */
+  private documentChanged(): void { try { this.documentListener?.() } catch (error) { if (!this.disposed) this.notify(readableError(error)) } }
+
   get pageCount(): number { return this.document ? this.slots.length : 0 }
+  /** The page at the top of the visible area (1-based). */
+  get currentPage(): number { return this.page }
 
   /** Page size in PDF points once known (measured on demand). */
   async pageSize(pageNumber: number): Promise<{ width: number; height: number } | null> {
@@ -282,7 +293,14 @@ export class PdfPreview {
     const owner = this.document
     if (!owner || this.disposed || !Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > this.slots.length) return null
     let task = this.texts.get(pageNumber)
-    if (!task) { task = this.readPageText(owner, pageNumber).catch(() => null); this.texts.set(pageNumber, task) }
+    if (!task) {
+      // A failed read is not remembered, so a later comment placement or search can try the page again.
+      const reading: Promise<PdfPageText | null> = this.readPageText(owner, pageNumber).catch(() => {
+        if (this.texts.get(pageNumber) === reading) this.texts.delete(pageNumber)
+        return null
+      })
+      task = reading; this.texts.set(pageNumber, task)
+    }
     const result = await task
     return owner === this.document && !this.disposed ? result : null
   }
@@ -310,8 +328,10 @@ export class PdfPreview {
   private slotChildren(slot: PageSlot): Node[] {
     const nodes: Node[] = []
     if (slot.canvas) nodes.push(slot.canvas)
-    const overlay = slot.canvas ? this.overlay?.(slot.number) : null
-    if (overlay) nodes.push(overlay)
+    if (slot.canvas) for (const provider of this.overlays.values()) {
+      const overlay = provider(slot.number)
+      if (overlay) nodes.push(overlay)
+    }
     if (slot.textNode) nodes.push(slot.textNode)
     if (this.highlightSlot === slot) nodes.push(...this.highlights)
     return nodes
@@ -574,6 +594,7 @@ export class PdfPreview {
     this.pan = null
     this.host.replaceChildren(); this.host.style.width = ''
     this.updatePanState()
+    this.documentChanged()
     if (this.scroll) { this.scroll.scrollTop = 0; this.scroll.scrollLeft = 0 }
     this.retirement = this.retirement.then(async () => {
       const results = await Promise.allSettled([loading ? Promise.resolve().then(() => loading.destroy()) : Promise.resolve(), drawing?.task.promise ?? Promise.resolve()])

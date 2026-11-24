@@ -350,6 +350,41 @@ describe('comment support in the PDF preview', () => {
     expect(host.children[0]!.children.every(child => child.tagName === 'canvas')).toBe(true)
   })
 
+  it('keeps a second named layer (search hits) beside the comment overlay and removes each independently', async () => {
+    const comments = new NodeMock('div'), hits = new NodeMock('div')
+    await open(3)
+    preview!.setOverlay(() => comments as unknown as HTMLElement)
+    preview!.setOverlay(() => hits as unknown as HTMLElement, 'find')
+    expect(host.children[0]!.children.slice(0, 3).map(child => child.tagName === 'canvas' ? 'canvas' : child)).toEqual(['canvas', comments, hits])
+    preview!.setOverlay(null)
+    expect(host.children[0]!.children).toContain(hits)
+    expect(host.children[0]!.children).not.toContain(comments)
+    preview!.setOverlay(null, 'find')
+    expect(host.children[0]!.children.every(child => child.tagName === 'canvas')).toBe(true)
+  })
+
+  it('scrolls to a search hit without the temporary flash and reports the page being read', async () => {
+    await open(4)
+    expect(preview!.currentPage).toBe(1)
+    await preview!.reveal(3, [{ x: 72, y: 300, width: 200, height: 12 }], false)
+    expect(preview!.currentPage).toBe(3)
+    expect(host.children.every(page => page.children.every(child => !child.className.includes('pdf-sync-highlight')))).toBe(true)
+  })
+
+  it('tells its listener when a document becomes readable and when it goes away, reporting a throwing listener without failing the preview', async () => {
+    const seen: number[] = []
+    const pdf = source(5); api.getDocument.mockReturnValue(pdf.loading)
+    preview = new PdfPreview(notify)
+    preview.setDocumentListener(() => { seen.push(preview!.pageCount); throw new Error('listener failure') })
+    await preview.show(new Uint8Array([1]))
+    expect(seen).toEqual([0, 5])
+    await preview.clear()
+    expect(seen).toEqual([0, 5, 0])
+    expect(position.textContent).toBe('尚未编译')
+    expect(notify.mock.calls.every(([message]) => message === 'listener failure')).toBe(true)
+    expect(notify).toHaveBeenCalledTimes(3)
+  })
+
   it('reveals a comment by scrolling to it and flashing every line box temporarily, leaving nothing behind', async () => {
     await open(4)
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })

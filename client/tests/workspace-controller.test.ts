@@ -18,7 +18,7 @@ const st = vi.hoisted(() => ({
   environment: vi.fn(), enabled: vi.fn(), rendererDirty: false, autoAck: true,
   versions: vi.fn(), versionDetail: vi.fn(), prepare: vi.fn(), beforeInitialize: vi.fn(), network: vi.fn(),
   remember: vi.fn(), binding: vi.fn(), saveAs: vi.fn(), fingerprint: vi.fn(),
-  failRoot: '', failWatch: '', watchers: [] as Array<{ root: string; listener: (paths: string[]) => void }>
+  failRoot: '', failWatch: '', background: [] as boolean[], watchers: [] as Array<{ root: string; listener: (paths: string[]) => void }>
 }))
 
 vi.mock('electron', () => ({
@@ -52,6 +52,7 @@ vi.mock('../src/main/local/project', () => ({
       st.watchers.push({ root: this.root, listener })
       return () => undefined
     }
+    setBackground(background: boolean) { st.background.push(background) }
     dispose() { st.dispose() }
   }
 }))
@@ -131,7 +132,7 @@ async function controller(account?: GitHubAccountService): Promise<WorkspaceCont
 
 beforeEach(() => {
   vi.clearAllMocks()
-  st.handles.clear(); st.events.clear(); st.watchers.length = 0
+  st.handles.clear(); st.events.clear(); st.watchers.length = 0; st.background.length = 0
   st.frame.url = 'file:///app/workspace.html'; st.failRoot = ''; st.failWatch = ''
   st.select.mockReset().mockResolvedValue({ canceled: true, filePaths: [] })
   st.prompt.mockReset().mockResolvedValue({ response: 0 })
@@ -232,6 +233,17 @@ describe('trusted local workspace integration', () => {
     expect(st.send).not.toHaveBeenCalledWith(C.event, expect.anything())
     st.watchers[1]!.listener(['main.tex'])
     expect(st.send).toHaveBeenCalledWith(C.event, { kind: 'files-changed', paths: ['main.tex'] })
+  })
+
+  it('paces the file watch of the open project, and of the next one, by whether the window can be seen', async () => {
+    const app = await controller(); select('old'); await invoke(C.open)
+    expect(st.background).toEqual([false])
+    app.setWindowHidden(true)
+    expect(st.background).toEqual([false, true])
+    select('new'); await invoke(C.open)
+    expect(st.background).toEqual([false, true, true])
+    app.setWindowHidden(false)
+    expect(st.background.at(-1)).toBe(false)
   })
 
   it('never clears dirty edits merely because an earlier save finished', async () => {

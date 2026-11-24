@@ -80,11 +80,13 @@ export class SafeProject {
   async resolve(path: string, missingLeaf = false): Promise<string> {
     return (await this.locate(path, missingLeaf)).target
   }
-  /** `info` is the leaf lstat that passed the no-link and containment checks; null only for an allowed missing leaf. */
-  private async locate(path: string, missingLeaf = false): Promise<{ target: string; info: Stats | null }> {
+  /** `info` is the leaf lstat that passed the no-link and containment checks, `canonical` its real path from the
+   * same check; both are null/empty only for an allowed missing leaf.
+   */
+  private async locate(path: string, missingLeaf = false): Promise<{ target: string; info: Stats | null; canonical: string }> {
     projectPath(path)
     await this.verifyRoot()
-    let target = this.root, leaf: Stats | null = null
+    let target = this.root, leaf: Stats | null = null, real = ''
     const parts = path.split('/')
     for (const [index, part] of parts.entries()) {
       target = join(target, part)
@@ -95,13 +97,13 @@ export class SafeProject {
         const canonical = await realpath(target)
         if (!inside(this.canonical, canonical)) throw failure('路径逃逸出项目目录')
         projectPath(relative(this.canonical, canonical).split(sep).join('/'))
-        leaf = info
+        leaf = info; real = canonical
       } catch (error) {
-        if (missingLeaf && index === parts.length - 1 && code(error) === 'ENOENT') return { target, info: null }
+        if (missingLeaf && index === parts.length - 1 && code(error) === 'ENOENT') return { target, info: null, canonical: '' }
         throw error
       }
     }
-    return { target, info: leaf }
+    return { target, info: leaf, canonical: real }
   }
   async readBytes(path: string, limit = LIMITS.file): Promise<Buffer> {
     const target = await this.resolve(path)
@@ -127,23 +129,34 @@ export class SafeProject {
     const files: ProjectFile[] = []
     const budget = { entries: 0 }
     const add = (file: ProjectFile, info: Stats): void => { files.push(file); observe?.(file, info) }
-    await this.walk('', add, budget, includeDirectories === true)
+    await this.walk('', this.root, this.canonical, add, budget, includeDirectories === true)
+    await this.verifyRoot() // the root was not swapped while its entries were being checked one directory at a time
     return files.sort((a, b) => a.path.localeCompare(b.path, 'en'))
   }
-  private async walk(folder: string, add: (file: ProjectFile, info: Stats) => void, budget: { entries: number }, includeDirectories: boolean): Promise<void> {
+  /** `target` and `canonical` are this folder's path and real path, already verified as link-free and inside the
+   * project. A child is then accepted from its own lstat and realpath when its real path is exactly
+   * `<this folder's real path>/<name>`: that cannot hold if the child, or any ancestor since it was verified, is a
+   * link or was redirected. Anything else goes through the full per-component `locate()`, which decides as before.
+   */
+  private async walk(folder: string, target: string, canonical: string, add: (file: ProjectFile, info: Stats) => void,
+    budget: { entries: number }, includeDirectories: boolean): Promise<void> {
     if (folder.split('/').length > LIMITS.depth) throw failure('项目目录深度超过限制')
-    const target = folder ? await this.resolve(folder) : this.root
     const directory = await opendir(target)
     for await (const entry of directory) {
       if (++budget.entries > LIMITS.entries) throw failure('项目超过 10000 个目录项限制')
       const path = folder ? `${folder}/${entry.name}` : entry.name
       if (skipped(path) || entry.isSymbolicLink()) continue
       projectPath(path)
-      // The leaf lstat that just passed locate()'s checks classifies the entry; a second lstat adds no check.
-      const info = (await this.locate(path)).info!
+      const child = join(target, entry.name), sample = await lstat(child)
+      const real = sample.isSymbolicLink() ? '' : await realpath(child)
+      const direct = real === join(canonical, entry.name)
+      // The lstat that passed the checks classifies the entry; a second lstat adds no check. A folder accepted by
+      // the full check is descended with the real path THAT check verified as inside the project.
+      const located = direct ? null : await this.locate(path)
+      const info = located ? located.info! : sample
       if (info.isDirectory()) {
         if (includeDirectories) add({ path, kind: 'directory', size: 0 }, info)
-        await this.walk(path, add, budget, includeDirectories)
+        await this.walk(path, child, located ? located.canonical : real, add, budget, includeDirectories)
       } else if (info.isFile()) add({ path, size: info.size, kind: TEXT.test(path) ? 'text' : 'binary' }, info)
       else throw failure('项目包含不支持的特殊文件')
     }

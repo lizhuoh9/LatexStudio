@@ -2,7 +2,7 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, rename, rm, rmdir, symlink, u
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectService } from '../src/main/local/project'
 import { decodeText, encodeText, LIMITS, projectPath, SafeProject } from '../src/main/local/paths'
 import { copyProject } from '../src/main/local/build'
@@ -127,6 +127,79 @@ describe('explicit GUI directory listings', () => {
     await rmdir(join(root, 'empty')); await removal
     stop()
     expect(await project.list()).toEqual([])
+  })
+  it('lists a deep tree with every folder and file, sizes and kinds from the verified walk', async () => {
+    const { root } = await fixture(), safe = new SafeProject(root)
+    await mkdir(join(root, 'a/b/c'), { recursive: true }); await mkdir(join(root, 'a/empty'))
+    await writeFile(join(root, 'a/b/c/deep.tex'), '12345'); await writeFile(join(root, 'a/b/fig.png'), 'xy')
+    await writeFile(join(root, 'main.tex'), 'm')
+    await safe.initialize()
+    const seen: string[] = []
+    const listed = await safe.list(true, (file, info) => { seen.push(`${file.path}:${info.isDirectory() ? 'd' : info.size}`) })
+    expect(listed).toEqual([{ path: 'a', kind: 'directory', size: 0 }, { path: 'a/b', kind: 'directory', size: 0 },
+      { path: 'a/b/c', kind: 'directory', size: 0 }, { path: 'a/b/c/deep.tex', kind: 'text', size: 5 },
+      { path: 'a/b/fig.png', kind: 'binary', size: 2 }, { path: 'a/empty', kind: 'directory', size: 0 },
+      { path: 'main.tex', kind: 'text', size: 1 }])
+    expect(seen.sort()).toEqual(['a/b/c/deep.tex:5', 'a/b/c:d', 'a/b/fig.png:2', 'a/b:d', 'a/empty:d', 'a:d', 'main.tex:1'])
+    expect((await safe.list()).map(file => file.path)).toEqual(['a/b/c/deep.tex', 'a/b/fig.png', 'main.tex'])
+  })
+  it('skips a link that appears beside real files deep in the tree and never lists what it points to', async () => {
+    const { root } = await fixture(), outside = await fixture(), safe = new SafeProject(root)
+    await mkdir(join(root, 'chapters/part'), { recursive: true }); await writeFile(join(root, 'chapters/part/one.tex'), '1')
+    await writeFile(join(outside.root, 'secret.tex'), 'outside')
+    await symlink(outside.root, join(root, 'chapters/part/away'), process.platform === 'win32' ? 'junction' : 'dir')
+    await safe.initialize()
+    expect((await safe.list(true)).map(file => file.path)).toEqual(['chapters', 'chapters/part', 'chapters/part/one.tex'])
+  }, 10_000)
+  it('rests for at least twice the length of a scan instead of scanning on a fixed beat', async () => {
+    const { project } = await fixture()
+    await project.initialize()
+    const actual = SafeProject.prototype.list
+    const scans = vi.spyOn(SafeProject.prototype, 'list').mockImplementation(async function (this: SafeProject, ...args) {
+      await new Promise(resolve => setTimeout(resolve, 60))
+      return actual.apply(this, args)
+    })
+    try {
+      const stop = project.watch(() => undefined, 10)
+      await new Promise(resolve => setTimeout(resolve, 430))
+      stop()
+      // One cycle is a 60 ms scan plus a 120 ms rest; a fixed 10 ms beat would have fitted six scans.
+      expect(scans.mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(scans.mock.calls.length).toBeLessThanOrEqual(3)
+    } finally { scans.mockRestore() }
+  })
+  it('looks for changes rarely while in the background and at once when brought back', async () => {
+    const { root, project } = await fixture()
+    await project.initialize()
+    const events: string[][] = []
+    const stop = project.watch(paths => { events.push(paths) }, 20)
+    project.setBackground(true)
+    await new Promise(resolve => setTimeout(resolve, 60)) // let a scan that was already due finish
+    await writeFile(join(root, 'late.tex'), 'written while minimised')
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(events.flat()).not.toContain('late.tex')
+    project.setBackground(false)
+    await vi.waitFor(() => { expect(events.flat()).toContain('late.tex') }, { timeout: 2000, interval: 10 })
+    stop()
+  })
+  it('does not start a second scan loop when watching is restarted during a scan', async () => {
+    const { project } = await fixture()
+    await project.initialize()
+    const actual = SafeProject.prototype.list
+    let running = 0, overlap = 0
+    const scans = vi.spyOn(SafeProject.prototype, 'list').mockImplementation(async function (this: SafeProject, ...args) {
+      overlap = Math.max(overlap, ++running)
+      try { await new Promise(resolve => setTimeout(resolve, 40)); return await actual.apply(this, args) } finally { running-- }
+    })
+    try {
+      const first = project.watch(() => undefined, 5)
+      await vi.waitFor(() => { expect(running).toBe(1) }, { timeout: 1000, interval: 2 })
+      first()
+      const second = project.watch(() => undefined, 5)
+      await new Promise(resolve => setTimeout(resolve, 400))
+      second()
+      expect(overlap).toBe(1)
+    } finally { scans.mockRestore() }
   })
 })
 

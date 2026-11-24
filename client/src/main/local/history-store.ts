@@ -48,6 +48,20 @@ export class HistoryStore {
   }
   async read(bucket: Bucket, name: string): Promise<Buffer> {
     await this.initialize(false)
+    return this.readChecked(bucket, name)
+  }
+  /** Reads many files of one bucket. The history directories are verified once before and once after the whole
+   * batch instead of around every file; each file is still opened without following links, identity-checked
+   * before and after its read and, for objects, hashed. The first failure in `names` order is the one reported.
+   */
+  async readEach<T>(bucket: Bucket, names: readonly string[], use: (name: string, bytes: Buffer) => T): Promise<T[]> {
+    if (!names.length) return []
+    await this.initialize(false)
+    const values = await mapVerification(names, async name => use(name, await this.readChecked(bucket, name)))
+    await this.initialize(false)
+    return values
+  }
+  private async readChecked(bucket: Bucket, name: string): Promise<Buffer> {
     const target = this.target(bucket, name), info = await lstat(target)
     const limit = bucket === 'objects' ? LIMITS.text : HISTORY_RECORD_LIMIT
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > limit)

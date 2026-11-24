@@ -4,6 +4,8 @@ export const MAX_OUTLINE_ITEMS = 300
 export const MAX_OUTLINE_CHARACTERS = 1024 * 1024
 export const MAX_OUTLINE_TITLE = 160
 const MAX_ARGUMENT_CHARACTERS = 4096
+/** While typing, the outline is re-read at most this often instead of on every keystroke. */
+export const OUTLINE_TYPING_DELAY_MS = 180
 const LEVELS = { part: 0, chapter: 1, section: 2, subsection: 3, subsubsection: 4 } as const
 export type OutlineKind = keyof typeof LEVELS
 export interface FileOutlineEntry {
@@ -160,15 +162,36 @@ export class FileOutline {
   private closing = false
   private disposed = false
   private rendered = false
+  private pending: string | null = null
+  private timer: ReturnType<typeof setTimeout> | null = null
   constructor(private host: HTMLElement, private reveal: (line: number) => void) {
     host.setAttribute('data-file-outline', '')
     this.update('')
   }
+  /** Shows this content's outline now (a file was opened, reloaded or replaced); drops any edit still waiting. */
   update(content: string): void {
     if (this.disposed) return
+    this.cancelPending()
     const next = parseFileOutline(content)
     if (this.rendered && sameEntries(this.entries, next)) return
     this.entries = next; this.rendered = true; this.generation++; this.render()
+  }
+  /** For edits made by typing: the latest content is shown after a short wait, so a run of keystrokes reads the
+   * file once per wait instead of once per key. The wait starts at the first unseen edit and is not pushed back.
+   */
+  updateSoon(content: string): void {
+    if (this.disposed) return
+    this.pending = content
+    if (this.timer !== null) return
+    this.timer = setTimeout(() => {
+      const latest = this.pending
+      this.timer = null; this.pending = null
+      if (latest !== null) this.update(latest)
+    }, OUTLINE_TYPING_DELAY_MS)
+  }
+  private cancelPending(): void {
+    if (this.timer !== null) { clearTimeout(this.timer); this.timer = null }
+    this.pending = null
   }
   setClosing(closing: boolean): void {
     if (this.disposed || this.closing === closing) return
@@ -176,6 +199,7 @@ export class FileOutline {
   }
   dispose(): void {
     if (this.disposed) return
+    this.cancelPending()
     this.disposed = true; this.rendered = false; this.generation++; this.entries = []; this.host.replaceChildren()
   }
   private render(): void {

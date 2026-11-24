@@ -1,0 +1,45 @@
+/* One find bar for both panes: a strip above the source text, a floating card over the PDF. */
+.find-bar { --find-control: 30px; display: grid; gap: 6px; min-width: 0; padding: 8px 10px; color: var(--text, #111827); background: var(--frame-bg, #f9fafd); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Malgun Gothic", sans-serif; }
+.find-bar .find-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.find-bar .find-field { flex: 1 1 0; display: flex; align-items: center; gap: 7px; min-width: 0; height: var(--find-control); margin: 0; font-size: 13px; padding: 0 4px 0 9px; color: var(--text, #111827); background: var(--surface-paper, #ffffff); border: 1px solid var(--border-strong, #cbd3e2); border-radius: 8px; cursor: text; transition: border-color var(--motion-fast, 140ms) ease, box-shadow var(--motion-fast, 140ms) ease, background-color var(--motion-fast, 140ms) ease; }
+.find-bar .find-field:focus-within { border-color: var(--accent-bright, #4d6bfe); box-shadow: 0 0 0 3px rgba(77, 107, 254, 0.16); }
+.find-bar .find-field.is-missing { border-color: #f1a5a5; background: #fff6f6; }
+.find-bar .find-field.is-missing:focus-within { border-color: #e06c6c; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12); }
+.find-bar .find-field > svg { flex: none; width: 15px; height: 15px; color: var(--muted, #647084); }
+.find-bar .find-field .find-input { flex: 1 1 auto; width: 0; min-width: 48px; height: 100%; padding: 0; color: inherit; background: transparent; border: 0; border-radius: 0; box-shadow: none; outline: none; font: inherit; }
+.find-bar .find-field .find-input::placeholder { color: #8b95a7; }
+.find-bar .find-count { flex: none; max-width: 46%; overflow: hidden; padding: 0 3px; color: var(--muted, #647084); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.find-bar .find-count:empty { display: none; }
+.find-bar .find-field.is-missing .find-count { color: var(--danger, #dc2626); }
+.find-bar .find-options { flex: none; display: flex; align-items: center; gap: 1px; }
+.find-bar button.find-button { flex: none; width: 28px; height: 28px; min-width: 0; min-height: 0; padding: 0; color: var(--text-secondary, #3f4859); background: transparent; border: 1px solid transparent; border-radius: 7px; box-shadow: none; }
+.find-bar button.find-button svg { display: block; width: 15px; height: 15px; }
+.find-bar button.find-button:hover:not(:disabled) { color: var(--text, #111827); background: var(--surface-hover, #e4e9f3); }
+.find-bar button.find-button:disabled { opacity: 0.38; }
+.find-bar button.find-toggle { width: 26px; height: 22px; border-radius: 5px; color: var(--muted, #647084); font: 600 11.5px/1 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: -0.02em; }
+.find-bar button.find-toggle.find-toggle-word { text-decoration: underline; text-underline-offset: 3px; }
+.find-bar button.find-toggle[aria-pressed="true"], .find-bar button.find-toggle[aria-pressed="true"]:hover:not(:disabled) { color: var(--accent, #3b58eb); background: var(--accent-subtle, #eef2ff); border-color: #c1cdfc; }
+.find-bar button.find-toggle[aria-pressed="true"]:hover:not(:disabled) { background: #e0e7ff; }
+.find-bar button.find-expand svg { transition: transform var(--motion-fast, 140ms) ease; }
+.find-bar button.find-expand[aria-expanded="true"] svg { transform: rotate(90deg); }
+.find-bar button.find-action { flex: none; height: var(--find-control); min-height: 0; padding: 0 12px; color: var(--text-secondary, #3f4859); background: var(--surface-paper, #ffffff); border: 1px solid var(--border-strong, #cbd3e2); border-radius: 8px; box-shadow: none; font-size: 12.5px; font-weight: 500; }
+.find-bar button.find-action:hover:not(:disabled) { color: var(--text, #111827); background: var(--surface-subtle, #edf1f8); border-color: #b4bfd4; }
+.find-bar button:focus-visible { outline: 2px solid var(--focus, #3b58eb); outline-offset: 1px; }
+
+/* Source editor: the replace row lines up under the find field (past the expand chevron). */
+.source-find .find-replace-row { flex-wrap: wrap; padding-left: 32px; }
+.source-find .find-replace-row .find-field { flex: 1 1 140px; }
+
+/* PDF: pinned to the top right of the scrolling page area, whatever the scroll position or zoom. */
+.pdf-find-anchor { position: sticky; top: 0; left: 0; z-index: 6; height: 0; }
+.pdf-find { position: absolute; top: 12px; right: 16px; width: min(360px, calc(100% - 32px)); padding: 6px; background: var(--surface-paper, #ffffff); border: 1px solid var(--border, #e3e8f2); border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1), 0 10px 28px rgba(15, 23, 42, 0.18); animation: findBarIn 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+.pdf-find .find-field { border-color: transparent; background: var(--surface-canvas, #f4f6fa); }
+@keyframes findBarIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pdf-find { animation: none; } }
+.pdf-controls #pdf-find-open svg { display: block; width: 15px; height: 15px; }
+.pdf-controls #pdf-find-open[aria-expanded="true"] { color: var(--accent, #3b58eb); background: var(--accent-subtle, #eef2ff); }
+
+/* Search hits sit under the selectable text, like comment highlights; the selected one is stronger. */
+#pdf-pages .pdf-find-layer { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+#pdf-pages .pdf-find-mark { position: absolute; border-radius: 2px; background: rgba(250, 204, 21, 0.5); mix-blend-mode: multiply; }
+#pdf-pages .pdf-find-mark.is-current { background: rgba(249, 115, 22, 0.62); outline: 2px solid #ea580c; outline-offset: 1px; }
