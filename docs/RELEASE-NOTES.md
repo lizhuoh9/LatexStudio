@@ -6,7 +6,7 @@
 | :---: | :---: |
 | [**Windows 64 位安装版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-win-x64-setup.exe) | [**Apple 芯片 Mac 版（DMG）**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-mac-arm64-test.dmg) |
 
-未签名开发版。Mac 版未完成 Apple 公证；只提供 Apple 芯片版，不支持 Intel 芯片的 Mac。**Mac 版自 0.4.15 起可以本地编译**（pdfLaTeX、XeLaTeX、BibTeX，TeX 随安装包提供，不用另装）。这项功能只在一台 Mac（macOS 27）上实测过：每台 Mac 第一次编译前会自检，自检不通过时只能编辑、不能编译。
+未签名开发版。Mac 版未完成 Apple 公证；只提供 Apple 芯片版，不支持 Intel 芯片的 Mac。**Mac 版自 0.4.16 起可以本地编译**（pdfLaTeX、XeLaTeX、BibTeX，TeX 随安装包提供，不用另装）。这项功能只在一台 Mac（macOS 27）上实测过：每台 Mac 第一次编译前会自检，自检不通过时只能编辑、不能编译。
 
 **Mac 安装与首次打开**：先在“苹果菜单 → 关于本机”确认芯片是 Apple M 系列。打开下载的 DMG，把 LatexStudio 拖到“应用程序”。因为未经 Apple 公证，第一次双击会被系统拦截：先点“完成”，再打开“系统设置 → 隐私与安全性”，在页面下方找到 LatexStudio 的提示并点“仍要打开”。之后可正常双击打开。
 

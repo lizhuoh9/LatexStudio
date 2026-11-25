@@ -81,7 +81,8 @@ async function main() {
   const compile = ['sandbox-macos-protocol', 'sandbox-macos-session', 'tex-darwin-runtime', 'tex-compiler-darwin', 'mac-helper-seal'].map(name => `tests/${name}.test.ts`)
   run(process.execPath, [bin('vitest'), 'run', 'tests/mac-desktop.test.ts', 'tests/macos-build.test.ts', 'tests/app-icon.test.ts', 'tests/workspace-window.test.ts', ...compile, ...tests], env)
   run(process.execPath, [bin('electron-vite'), 'build'], env)
-  run(process.execPath, [bin('electron-builder'), ...build.builder], env)
+  // graceful-open-files: the signer opens every file of the app at once; see that script.
+  run(process.execPath, ['--require', path.join(__dirname, 'graceful-open-files.cjs'), bin('electron-builder'), ...build.builder], env, 'electron-builder')
   const { version } = require('../package.json'), output = path.join(root, 'release/macos-test')
   const artifact = artifactName(version, build.arch)
   const app = path.join(output, build.arch === 'arm64' ? 'mac-arm64' : 'mac', 'LatexStudio.app')

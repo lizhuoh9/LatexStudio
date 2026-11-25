@@ -1,4 +1,4 @@
-# LatexStudio 0.4.15 客户端
+# LatexStudio 0.4.16 客户端
 
 普通用户通过桌面 LatexStudio 快捷方式或已安装的应用启动；界面语言可在右上角账号菜单的“语言”中选择简体中文、English 或 한국어，切换即时生效并保留到下次启动。无需运行下面的开发命令。语言范围与数据保护见[界面语言说明](<../docs/INTERFACE-LANGUAGES.md>)。首次启动在后台用内置资源自动离线配置、校验；期间可编辑保存，不弹出下载或组件选择。
 
@@ -43,6 +43,6 @@ npm start
 
 0.4.7 起登录改用 OAuth App 设备登录（`repo` 权限，公共 Client ID 见 `github-app.public.ts`）：令牌无到期时间也无刷新令牌，仅 Main 使用、OS 加密保存，每 8 小时窗口结束前和每次启动恢复时重新核对账号，401 或账号不一致即结束登录；该路径由隔离测试覆盖，尚无真实账号的长时间保持验收。以下为 0.4.6 及之前 GitHub App 路线的记录：GitHub App 的公共标识已接入；已真实验证 Windows 同账号的私有建库／关联／两目录交替同步，不冒充第二个人邀请或同时冲突验收。0.3.8 自动轮换设备流程的 access／refresh 配对，仅 Main 使用、OS 加密保留、恢复与续期后重新验证身份；安全存储不可用只留内存。退出清除本机登录，撤销／续期授权失效仍须重新登录；旧记录升级后显式登录一次。定时跨期／断网恢复／Logout 与关闭轮换以隔离测试验证，不冒充已等待真实八小时的 GitHub 续期验收。每项目关联独立，创建固定私有且必须明确同步；链接不授权，本地日志不自动上传，不强推。
 
-Windows 使用固定资源与 AppContainer，不执行系统 TeX、项目脚本或 shell escape；清理未确认锁死本进程编译。macOS 自 0.4.15 起由 App Sandbox 里的编译助手编译（见 `resources/darwin/README.md`，只在一台 Mac 上实测过）。Biber、LuaLaTeX、受信签名／公证和原样新版安装验收未开放或未完成。已有沙箱残留禁令仍以[开发约束](<../CLAUDE.md>)及[helper 说明](<resources/win32/README.md>)为准。
+Windows 使用固定资源与 AppContainer，不执行系统 TeX、项目脚本或 shell escape；清理未确认锁死本进程编译。macOS 自 0.4.16 起由 App Sandbox 里的编译助手编译（见 `resources/darwin/README.md`，只在一台 Mac 上实测过）。Biber、LuaLaTeX、受信签名／公证和原样新版安装验收未开放或未完成。已有沙箱残留禁令仍以[开发约束](<../CLAUDE.md>)及[helper 说明](<resources/win32/README.md>)为准。
 
 [使用](<../docs/GITHUB-WORKFLOW.md>) · [配置 App](<../docs/GITHUB-APP-SETUP.md>) · [恢复](<../docs/PROJECT-HISTORY.md>) · [发布](<../docs/RELEASE-ACCEPTANCE.md>) · [第三方](<THIRD_PARTY_NOTICES.md>)

@@ -1,6 +1,6 @@
 # macOS 编译助手
 
-状态（2026-11-25）：**已在一台 Mac 上实测（macOS 27.2.1，Apple 芯片），自 0.4.15 起随 Mac 版发布。**
+状态（2026-11-25）：**已在一台 Mac 上实测（macOS 27.2.1，Apple 芯片），自 0.4.16 起随 Mac 版发布。**
 `client/src/main/tex/darwin-runtime.ts` 里的两个校验值（`DARWIN_INSTALL_TREE_SHA256`、`MAC_HELPER_SHA256`）已经填上。
 方案、实测结果和发布准备记在开发文档 `docs/MACOS-COMPILE-PLAN.md` 第十一、十二节（不随公开源码发布）。
 
