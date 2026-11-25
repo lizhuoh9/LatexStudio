@@ -1,4 +1,4 @@
-import { findAllInPdfPage, indexPdfPage, quoteKey, type PdfPageIndex, type PdfTextRect } from '../shared/comment-anchor'
+import { findAllInPdfPage, indexPdfPage, quoteKey, type PdfPageIndex, type PdfTextEdges, type PdfTextRect } from '../shared/comment-anchor'
 import { translate } from '../shared/i18n'
 import type { PdfPageText } from './pdf-view'
 import { element } from './dom'
@@ -7,7 +7,8 @@ import { uiFormattedText } from './i18n-dom'
 import './find-bar-style.css'
 
 export const PDF_FIND_LIMITS = Object.freeze({ query: 200, matches: 2000, publishEvery: 16, typingDelayMs: 140 })
-export interface PdfFindSource { readonly pageCount: number; pageText(page: number): Promise<PdfPageText | null> }
+/** `textEdges` (optional) measures where each character sits inside a text run; see PdfTextMeasure. */
+export interface PdfFindSource { readonly pageCount: number; pageText(page: number): Promise<PdfPageText | null>; readonly textEdges?: PdfTextEdges }
 export interface PdfFindMatch { page: number; pageWidth: number; pageHeight: number; rects: PdfTextRect[] }
 /** `matches` are in page order; `current` is -1 when there is none. `capped` means more exist than were collected. */
 export interface PdfFindState { query: string; matches: readonly PdfFindMatch[]; current: number; searching: boolean; capped: boolean }
@@ -20,6 +21,7 @@ export class PdfFindModel {
   private generation = 0
   private state: PdfFindState = NOTHING
   private selected: PdfFindMatch | null = null
+  private byPage = new Map<number, { content: PdfPageText; matches: PdfFindMatch[] }>()
   private readonly indexes = new WeakMap<PdfPageText, PdfPageIndex>()
 
   constructor(private readonly source: PdfFindSource, private readonly changed: (state: PdfFindState, reveal: boolean) => void) {}
@@ -28,14 +30,10 @@ export class PdfFindModel {
 
   async search(text: string, fromPage = 1, reveal = true): Promise<void> {
     const query = text.slice(0, PDF_FIND_LIMITS.query), generation = ++this.generation, pages = this.source.pageCount
-    this.selected = null
+    this.selected = null; this.byPage = new Map()
     if (!quoteKey(query) || pages < 1) { this.emit({ ...NOTHING, query }, false); return }
-    const byPage = new Map<number, PdfFindMatch[]>()
     let total = 0, capped = false
-    const publish = (searching: boolean, jump: boolean): void => {
-      const matches = [...byPage.keys()].sort((a, b) => a - b).flatMap(page => byPage.get(page)!)
-      this.emit({ query, matches, current: this.selected ? matches.indexOf(this.selected) : -1, searching, capped }, jump)
-    }
+    const publish = (searching: boolean, jump: boolean): void => this.publish({ query, searching, capped }, jump)
     this.emit({ ...NOTHING, query, searching: true }, false)
     const start = Math.max(1, Math.min(pages, Math.trunc(fromPage) || 1))
     for (let offset = 0; offset < pages && !capped; offset++) {
@@ -45,7 +43,7 @@ export class PdfFindModel {
       const found = findAllInPdfPage(this.index(content), query, PDF_FIND_LIMITS.matches - total)
         .map(rects => ({ page, pageWidth: content.width, pageHeight: content.height, rects }))
       if (!found.length) continue
-      byPage.set(page, found); total += found.length; capped = total >= PDF_FIND_LIMITS.matches
+      this.byPage.set(page, { content, matches: found }); total += found.length; capped = total >= PDF_FIND_LIMITS.matches
       if (!this.selected) { this.selected = found[0]!; publish(true, reveal) }
       else if (offset % PDF_FIND_LIMITS.publishEvery === 0) publish(true, false)
     }
@@ -64,15 +62,44 @@ export class PdfFindModel {
   /** The document was replaced: the same words are looked up again without moving the view. */
   refresh(): Promise<void> { return this.search(this.state.query, this.selected?.page ?? 1, false) }
 
-  clear(): void { this.generation++; this.selected = null; this.emit(NOTHING, false) }
+  clear(): void { this.generation++; this.selected = null; this.byPage = new Map(); this.emit(NOTHING, false) }
+
+  /** A page has just been painted, so its fonts are loaded: hits on it found earlier are measured again, and the
+   * marks move if the first measurement (with a stand-in font) was off. The selection and the view stay put.
+   */
+  remeasure(page: number): void {
+    const known = this.byPage.get(page)
+    if (!known) return
+    const rects = findAllInPdfPage(this.index(known.content), this.state.query, known.matches.length)
+    if (rects.length !== known.matches.length || rects.every((list, index) => sameRects(list, known.matches[index]!.rects))) return
+    const matches = known.matches.map((match, index) => {
+      const next = { ...match, rects: rects[index]! }
+      if (this.selected === match) this.selected = next
+      return next
+    })
+    this.byPage.set(page, { content: known.content, matches })
+    this.publish({ query: this.state.query, searching: this.state.searching, capped: this.state.capped }, false)
+  }
+
+  private publish(status: Pick<PdfFindState, 'query' | 'searching' | 'capped'>, jump: boolean): void {
+    const matches = [...this.byPage.keys()].sort((a, b) => a - b).flatMap(page => this.byPage.get(page)!.matches)
+    this.emit({ ...status, matches, current: this.selected ? matches.indexOf(this.selected) : -1 }, jump)
+  }
 
   private index(content: PdfPageText): PdfPageIndex {
     let index = this.indexes.get(content)
-    if (!index) { index = indexPdfPage(content.items); this.indexes.set(content, index) }
+    if (!index) { index = indexPdfPage(content.items, this.source.textEdges); this.indexes.set(content, index) }
     return index
   }
 
   private emit(state: PdfFindState, reveal: boolean): void { this.state = state; this.changed(state, reveal) }
+}
+
+function sameRects(left: readonly PdfTextRect[], right: readonly PdfTextRect[]): boolean {
+  return left.length === right.length && left.every((rect, index) => {
+    const other = right[index]!
+    return rect.x === other.x && rect.y === other.y && rect.width === other.width && rect.height === other.height
+  })
 }
 
 /** Search hits drawn under the selectable text layer, one stable container per page (like comment highlights). */
@@ -121,6 +148,7 @@ export interface PdfFindHost extends PdfFindSource {
   readonly currentPage: number
   setOverlay(provider: ((page: number) => HTMLElement | null) | null, layer?: string): void
   setDocumentListener(listener: (() => void) | null): void
+  onPageRendered(listener: (page: number) => void): () => void
   reveal(page: number, rects: readonly PdfTextRect[], flash?: boolean): Promise<void>
 }
 
@@ -146,6 +174,7 @@ export class PdfFind {
     this.model = new PdfFindModel(pdf, (state, reveal) => this.render(state, reveal))
     pdf.setOverlay(this.marks.provider, 'find')
     pdf.setDocumentListener(() => { if (!this.bar.hidden) void this.model.refresh().catch(error => this.notify(readableError(error))) })
+    this.cleanups.push(pdf.onPageRendered(page => this.model.remeasure(page)))
     this.listen(this.opener, 'click', () => { if (this.bar.hidden) this.open(); else this.close() })
     this.listen(element('pdf-find-close'), 'click', () => this.close())
     this.listen(this.previous, 'click', () => this.move(-1))

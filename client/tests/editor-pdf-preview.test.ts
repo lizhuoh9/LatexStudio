@@ -404,6 +404,43 @@ describe('comment support in the PDF preview', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('passes on the font, generic family and width in em of each run, but not for vertical or rotated text', async () => {
+    const pdf = source(1, 600, 800)
+    const read = withText(pdf, 1, [])
+    read.mockResolvedValue({ styles: { g_d0_f1: { fontFamily: 'serif' }, g_d0_f2: { fontFamily: 'serif', vertical: true } }, items: [
+      { str: 'Results', fontName: 'g_d0_f1', transform: [10, 0, 0, 10, 100, 700], width: 40, height: 10 },
+      { str: 'unknown style', fontName: 'g_d0_f9', transform: [8, 0, 0, 8, 100, 680], width: 60, height: 8 },
+      { str: 'vertical', fontName: 'g_d0_f2', transform: [10, 0, 0, 10, 100, 600], width: 40, height: 10 },
+      { str: 'rotated', fontName: 'g_d0_f1', transform: [0, 10, -10, 0, 100, 500], width: 40, height: 10 },
+      { str: 'no font', transform: [10, 0, 0, 10, 100, 400], width: 40, height: 10 }] })
+    api.getDocument.mockReturnValue(pdf.loading); preview = new PdfPreview(notify); await preview.show(new Uint8Array([1]))
+    const items = (await preview.pageText(1))!.items
+    expect(items[0]).toMatchObject({ str: 'Results', font: 'g_d0_f1', family: 'serif', ems: 4 })
+    expect(items[1]).toMatchObject({ font: 'g_d0_f9', ems: 7.5 })
+    expect(items[1]).not.toHaveProperty('family')
+    for (const item of items.slice(2)) { expect(item).not.toHaveProperty('font'); expect(item).not.toHaveProperty('ems') }
+    // Without a browser canvas nothing can be measured, and callers fall back to equal character widths.
+    expect(preview.textEdges(items[0]!)).toBeNull()
+  })
+
+  it('tells listeners each time a page has been painted, reporting a throwing listener without failing the preview', async () => {
+    const pdf = source(4); api.getDocument.mockReturnValue(pdf.loading)
+    preview = new PdfPreview(notify)
+    const pages: number[] = []
+    const remove = preview.onPageRendered(page => { pages.push(page) })
+    preview.onPageRendered(() => { throw new Error('page listener failure') })
+    await preview.show(new Uint8Array([1]))
+    expect(pages).toContain(1)
+    expect(new Set(pages).size).toBe(pages.length)
+    expect(live().length).toBe(pages.length)
+    expect(pages.length).toBeGreaterThan(1)
+    expect(notify.mock.calls).toEqual([['page listener failure']]) // once per document, not once per painted page
+    remove()
+    const count = pages.length
+    await preview.scale(0.1)
+    expect(pages).toHaveLength(count)
+  })
+
   it('reads page text once per document as top-left boxes in PDF points and forgets it with the document', async () => {
     const pdf = source(3, 600, 800)
     const read = withText(pdf, 2, [{ str: 'Results', transform: [10, 0, 0, 10, 100, 700], width: 40, height: 10 }, { str: '', transform: [1, 0, 0, 1, 0, 0] }, { type: 'beginMarkedContent' }])

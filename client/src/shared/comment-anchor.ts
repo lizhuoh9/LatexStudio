@@ -3,17 +3,24 @@
  * hyphenation, punctuation, ligatures and TeX spacing do not matter. Han/Kana characters are words of their own.
  * When the exact text is gone, a token-level local alignment accepts a span that still contains most of it.
  */
-export interface PdfTextItem { str: string; x: number; y: number; width: number; height: number }
+/** `font` (PDF.js font name), `family` (generic CSS family) and `ems` (the run's width in units of its font size)
+ * are optional hints for measuring where each character sits inside the run.
+ */
+export interface PdfTextItem { str: string; x: number; y: number; width: number; height: number; font?: string; family?: string; ems?: number }
+/** Character boundaries of one run as fractions of its width (`characters + 1` values from 0 to 1), or null. */
+export type PdfTextEdges = (item: PdfTextItem) => ArrayLike<number> | null
 export interface PdfTextRect { x: number; y: number; width: number; height: number }
 export interface QuoteContext { quote: string; before: string; after: string }
 export interface SourceSpan { line: number; endLine: number }
+/** A stretch of a page's folded key; with the page index it gives the rects again (after fonts have loaded). */
+export interface PdfKeySpan { start: number; end: number }
 /** `text` is the matched span as the page reads (separate lines and gaps joined by a space). */
-export interface PdfMatch { rects: PdfTextRect[]; exact: boolean; text: string; before: string; after: string }
+export interface PdfMatch { rects: PdfTextRect[]; exact: boolean; text: string; before: string; after: string; span: PdfKeySpan }
 
 interface Span { start: number; end: number }
 interface Scan { key: string; tokens: Span[] }
 interface SourceScan extends Scan { lines: Int32Array }
-export interface PdfPageIndex extends Scan { items: PdfTextItem[]; item: Int32Array; char: Int32Array; lengths: number[]; plain: string; plainAt: Int32Array }
+export interface PdfPageIndex extends Scan { items: PdfTextItem[]; item: Int32Array; char: Int32Array; lengths: number[]; plain: string; plainAt: Int32Array; edges?: PdfTextEdges }
 
 const ALNUM = /[\p{L}\p{N}]/u
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u
@@ -186,8 +193,10 @@ function align(quote: string[], words: string[], window: Span): Alignment | null
   return best
 }
 
-/** Builds the folded key of one PDF page with, per key character, the text item and character it came from. */
-export function indexPdfPage(items: readonly PdfTextItem[]): PdfPageIndex {
+/** Builds the folded key of one PDF page with, per key character, the text item and character it came from.
+ * `edges` (optional) says where each character sits inside its run; without it characters count as equally wide.
+ */
+export function indexPdfPage(items: readonly PdfTextItem[], edges?: PdfTextEdges): PdfPageIndex {
   const scan: Scan = { key: '', tokens: [] }, item: number[] = [], char: number[] = [], lengths: number[] = [], plainAt: number[] = []
   let plain = '', wordOpen = false
   items.forEach((entry, index) => {
@@ -205,7 +214,7 @@ export function indexPdfPage(items: readonly PdfTextItem[]): PdfPageIndex {
     wordOpen = open
     lengths.push(offset)
   })
-  return { ...scan, items: [...items], item: Int32Array.from(item), char: Int32Array.from(char), lengths, plain, plainAt: Int32Array.from(plainAt) }
+  return { ...scan, items: [...items], item: Int32Array.from(item), char: Int32Array.from(char), lengths, plain, plainAt: Int32Array.from(plainAt), ...(edges ? { edges } : {}) }
 }
 
 /** Finds the anchored text on one page: exact first (best context, nearest the hint), else — unless `exactOnly` —
@@ -239,23 +248,39 @@ export function findAllInPdfPage(page: PdfPageIndex, query: string, limit: numbe
   return found
 }
 
-function match(page: PdfPageIndex, start: number, end: number, exact: boolean): PdfMatch {
+/** Measured character boundaries of one run when they fit its text; a failing measurement counts as none. */
+function runEdges(page: PdfPageIndex, entry: PdfTextItem, length: number): ArrayLike<number> | null {
+  if (!page.edges) return null
+  try {
+    const edges = page.edges(entry)
+    return edges && edges.length === length + 1 ? edges : null
+  } catch { return null }
+}
+
+/** One rect per run the span touches (PDF points), runs on one line merged. Calling it again later gives the
+ * rects for the character widths known by then.
+ */
+export function spanRects(page: PdfPageIndex, span: PdfKeySpan): PdfTextRect[] {
   const ranges = new Map<number, { first: number; last: number }>()
-  for (let k = start; k < end; k++) {
+  for (let k = Math.max(0, span.start); k < Math.min(span.end, page.key.length); k++) {
     const index = page.item[k]!, offset = page.char[k]!, range = ranges.get(index)
     ranges.set(index, range ? { first: Math.min(range.first, offset), last: Math.max(range.last, offset) } : { first: offset, last: offset })
   }
-  const rects = [...ranges].map(([index, range]) => {
-    const entry = page.items[index]!, length = Math.max(1, page.lengths[index]!)
-    return { x: entry.x + (range.first / length) * entry.width, y: entry.y,
-      width: Math.max(1, ((range.last + 1 - range.first) / length) * entry.width), height: Math.max(1, entry.height) }
-  })
+  return mergeRects([...ranges].map(([index, range]) => {
+    const entry = page.items[index]!, length = Math.max(1, page.lengths[index]!), edges = runEdges(page, entry, length)
+    const left = edges ? edges[range.first]! : range.first / length
+    const share = edges ? edges[range.last + 1]! - left : (range.last + 1 - range.first) / length
+    return { x: entry.x + left * entry.width, y: entry.y, width: Math.max(1, share * entry.width), height: Math.max(1, entry.height) }
+  }))
+}
+
+function match(page: PdfPageIndex, start: number, end: number, exact: boolean): PdfMatch {
   const from = page.plainAt[start]!, last = page.plainAt[end - 1]!
   const to = last + ((page.plain.codePointAt(last) ?? 0) > 0xffff ? 2 : 1)
   const before = wellFormed(page.plain.slice(Math.max(0, from - CONTEXT_TEXT), from)).replace(/\s+/g, ' ').trim()
   const after = wellFormed(page.plain.slice(to, to + CONTEXT_TEXT)).replace(/\s+/g, ' ').trim()
   const text = wellFormed(page.plain.slice(from, to)).replace(/\s+/g, ' ').trim()
-  return { rects: mergeRects(rects), exact, text, before, after }
+  return { rects: spanRects(page, { start, end }), exact, text, before, after, span: { start, end } }
 }
 
 /** Drops a surrogate half left by slicing through a character outside the BMP. */

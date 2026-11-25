@@ -130,6 +130,45 @@ describe('searching the whole PDF', () => {
   })
 })
 
+describe('search hits after their page has been painted', () => {
+  it('measures the hits on that page again, moving the marks without jumping or losing the selection', async () => {
+    // Arrange: equal character widths at first; once "painted", the line turns out to start with narrow letters.
+    const first = page('iiii FSI and FSI'), second = page('FSI')
+    let painted = false
+    const narrow = (str: string): Float64Array => {
+      const widths = [...str].map(ch => ch === 'i' ? 1 : 3), total = widths.reduce((sum, width) => sum + width, 0)
+      return Float64Array.from([0, ...widths.map((_, index) => widths.slice(0, index + 1).reduce((sum, width) => sum + width, 0) / total)])
+    }
+    const states: { state: PdfFindState; reveal: boolean }[] = []
+    const source = { pageCount: 2, pageText: vi.fn(async (number: number) => [first, second][number - 1] ?? null),
+      textEdges: (item: PdfTextItem) => painted && item === first.items[0] ? narrow(item.str) : null }
+    const model = new PdfFindModel(source, (state, reveal) => { states.push({ state, reveal }) })
+    await model.search('FSI')
+    model.step(1)
+    const before = states.at(-1)!.state, count = states.length
+
+    // Act + Assert: nothing to correct yet, and pages without hits are ignored.
+    model.remeasure(1); model.remeasure(7)
+    expect(states).toHaveLength(count)
+
+    painted = true
+    model.remeasure(1)
+    const after = states.at(-1)!
+    expect(states).toHaveLength(count + 1)
+    expect(after.reveal).toBe(false)
+    expect(after.state.current).toBe(1)
+    expect(after.state.matches.map(match => match.page)).toEqual([1, 1, 2])
+    expect(after.state.matches[0]!.rects[0]!.x).toBeCloseTo(72 + 96 * 7 / 40, 9) // four narrow letters and a space
+    expect(after.state.matches[0]!.rects[0]!.x).toBeLessThan(before.matches[0]!.rects[0]!.x)
+    expect(after.state.matches[2]).toBe(before.matches[2]) // the other page is untouched
+
+    model.remeasure(1)
+    expect(states).toHaveLength(count + 1) // already exact
+    model.step(1)
+    expect(states.at(-1)!.state.current).toBe(2)
+  })
+})
+
 describe('PDF find markup and catalog', () => {
   const markup = readFileSync(new URL('../src/renderer/index.html', import.meta.url), 'utf8')
   it('adds a find button to the PDF controls and a hidden find bar pinned inside the scrolling page area', () => {

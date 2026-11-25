@@ -1,4 +1,4 @@
-import { indexPdfPage, indexSource, locateInPdfPage, quoteKey, type PdfPageIndex, type SourceIndex } from '../shared/comment-anchor'
+import { indexPdfPage, indexSource, locateInPdfPage, quoteKey, type PdfPageIndex, type PdfTextRect, type SourceIndex } from '../shared/comment-anchor'
 import { COMMENT_LIMITS, commentBody, commentSnippet, type CommentAnchor, type CommentApi, type CommentIdentity,
   type CommentSnapshot } from '../shared/comment-contracts'
 import { buildThreads, type CommentThread } from '../shared/comment-threads'
@@ -34,6 +34,13 @@ const cached = <K, V>(map: Map<K, Promise<V>>, key: K, load: () => Promise<V>): 
   return value
 }
 
+/** The same comment with its highlight at newly measured rects; its place in the list follows the first rect. */
+function moveTo(entry: PlacedComment, rects: PdfTextRect[]): PlacedComment {
+  const first = rects[0], placement = entry.placement
+  return { ...entry, mark: entry.mark ? { ...entry.mark, rects } : null,
+    placement: first && placement.state === 'anchored' ? { ...placement, x: first.x, y: first.y, width: first.width, height: first.height } : placement }
+}
+
 /** PDF comments of the open paper: selection → draft → Main writes the event; threads, highlights and the panel
  * are rebuilt from Main's snapshot. Placement is recomputed after every compile and comment refresh.
  */
@@ -55,6 +62,8 @@ export class CommentsController {
   private requested = 0
   private applied = 0
   private pdfEpoch = 0
+  /** The PDF (`pdfEpoch`) whose text `placed` was computed from; -1 while there is none. */
+  private placedEpoch = -1
   private pdfPending = false
   private closing = false
 
@@ -73,6 +82,11 @@ export class CommentsController {
     element('comments-open').hidden = !host.api
     this.listen('comments-open', () => this.setOpen(Boolean(element('comment-panel').hidden)))
     this.listen('comment-close', () => { this.setOpen(false); element('comments-open').focus() })
+    // Only for the PDF the highlights were placed on: while a new PDF is loading, or before its comments have
+    // been placed again, the old positions must not be painted onto the new pages.
+    this.cleanups.push(host.pdf.onPageRendered(page => {
+      if (!this.pdfPending && this.placedEpoch === this.pdfEpoch && this.remeasured(page)) this.paintMarks()
+    }))
     this.observeLayout()
     this.render()
   }
@@ -88,7 +102,7 @@ export class CommentsController {
 
   projectChanged(): void {
     this.generation++; this.anchorRun++
-    this.threads = []; this.placed = new Map(); this.draft = null; this.active = null; this.unreadable = 0
+    this.threads = []; this.placed = new Map(); this.placedEpoch = -1; this.draft = null; this.active = null; this.unreadable = 0
     this.sources.clear(); this.marks.clear(); this.render()
     this.refresh()
   }
@@ -146,7 +160,7 @@ export class CommentsController {
         const text = await pdf.pageText(number)
         if (!text) return null
         let index = this.pages.get(text)
-        if (!index) { index = indexPdfPage(text.items); this.pages.set(text, index) }
+        if (!index) { index = indexPdfPage(text.items, pdf.textEdges); this.pages.set(text, index) }
         return { width: text.width, height: text.height, index }
       })
     }
@@ -163,7 +177,7 @@ export class CommentsController {
   }
 
   private async reanchor(): Promise<void> {
-    const run = ++this.anchorRun, generation = this.generation, context = this.context(), placed = new Map<string, PlacedComment>()
+    const run = ++this.anchorRun, generation = this.generation, epoch = this.pdfEpoch, context = this.context(), placed = new Map<string, PlacedComment>()
     for (const [position, thread] of this.threads.entries()) {
       if (position && position % PLACEMENT.yieldEvery === 0) await pause()
       if (run !== this.anchorRun || generation !== this.generation) return
@@ -172,9 +186,30 @@ export class CommentsController {
       if (run !== this.anchorRun || generation !== this.generation) return
       placed.set(thread.id, result)
     }
-    this.placed = placed
+    this.placed = placed; this.placedEpoch = epoch
+    this.remeasured() // a page may have been painted (its fonts loaded) while the comments were being placed
     this.paintMarks()
     this.render()
+  }
+
+  /** Measures the highlights on one page (or all) again and reports whether any moved. A page that has just been
+   * painted has its fonts loaded, so a first measurement made with a stand-in font can be corrected. Which text
+   * each comment sits on does not change.
+   */
+  private remeasured(page?: number): boolean {
+    let moved = false
+    const placed = new Map<string, PlacedComment>()
+    for (const [id, entry] of this.placed) {
+      const rects = entry.mark && (page === undefined || entry.mark.page === page) ? entry.remeasure?.() : undefined
+      const same = !rects || !entry.mark || (rects.length === entry.mark.rects.length && rects.every((rect, index) => {
+        const old = entry.mark!.rects[index]!
+        return rect.x === old.x && rect.y === old.y && rect.width === old.width && rect.height === old.height
+      }))
+      placed.set(id, same ? entry : moveTo(entry, rects!))
+      moved ||= !same
+    }
+    if (moved) this.placed = placed
+    return moved
   }
 
   /** Only open comments stay highlighted on the page; a fixed comment lives in the list and flashes when opened. */
@@ -223,7 +258,7 @@ export class CommentsController {
     const end = inverseSync(synctex, capture.page, capture.end.x, capture.end.y)
     if (!start) { this.host.notify('无法确定选中文字对应的源文件位置，请换一处选择或重新编译。'); return }
     const text = await this.host.pdf.pageText(capture.page)
-    const found = text ? locateInPdfPage(indexPdfPage(text.items), { quote, before: '', after: '' }, capture.start, true) : null
+    const found = text ? locateInPdfPage(indexPdfPage(text.items, this.host.pdf.textEdges), { quote, before: '', after: '' }, capture.start, true) : null
     if (generation !== this.generation || epoch !== this.pdfEpoch || this.closing) return
     // The page's own text keeps word breaks across lines even where the text layer's selection string glues them.
     const readable = commentSnippet(found?.text ?? '', COMMENT_LIMITS.quote)

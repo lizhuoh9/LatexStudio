@@ -7,6 +7,7 @@ import type { PdfTextItem } from '../shared/comment-anchor'
 import { element, text } from './dom'
 import { readableError } from './editor-model'
 import { uiAttribute } from './i18n-dom'
+import { PdfTextMeasure } from './pdf-text-measure'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -24,6 +25,14 @@ export interface PdfDoubleClickLocation { page: number; x: number; y: number; wo
 /** Plain text items of one page in PDF points, top-left origin, as text only (no fonts, links or scripts). */
 export interface PdfPageText { width: number; height: number; items: PdfTextItem[] }
 const MAX_TEXT_ITEMS = 50_000
+
+interface RunStyle { fontFamily?: string; vertical?: boolean }
+/** Hints for measuring the characters inside one text run; none for vertical, rotated or degenerate runs. */
+function runFont(entry: { fontName?: string; width?: number; transform: number[] }, styles: Record<string, RunStyle | undefined> | undefined): Pick<PdfTextItem, 'font' | 'family' | 'ems'> {
+  const style = entry.fontName ? styles?.[entry.fontName] : undefined, size = entry.transform[0]!, width = entry.width ?? 0
+  if (!entry.fontName || style?.vertical || !(size > 0) || !(width > 0) || Math.abs(entry.transform[1]!) > size * 1e-3) return {}
+  return { font: entry.fontName, ...(style?.fontFamily ? { family: style.fontFamily } : {}), ems: width / size }
+}
 
 function extractPdfWord(target: EventTarget | null): string | undefined {
   const selected = typeof window.getSelection === 'function' ? window.getSelection()?.toString() ?? '' : ''
@@ -56,7 +65,12 @@ export class PdfPreview {
   private highlightTimer: ReturnType<typeof setTimeout> | null = null
   private overlays = new Map<string, (page: number) => HTMLElement | null>()
   private documentListener: (() => void) | null = null
+  private readonly pageListeners = new Set<(page: number) => void>()
+  private lastListenerError = ''
   private texts = new Map<number, Promise<PdfPageText | null>>()
+  private readonly measure = new PdfTextMeasure()
+  /** Where each character sits inside a text run from `pageText` (see PdfTextMeasure). */
+  readonly textEdges = this.measure.edges
   private host = element('pdf-pages')
   private scroll = this.host.closest<HTMLElement>('.pdf-scroll')
   private observer: ResizeObserver | null = null
@@ -235,7 +249,7 @@ export class PdfPreview {
       if (owner !== this.document || this.disposed || typeof page.getTextContent !== 'function') return target
       const base = page.getViewport({ scale: 1 })
       if (typeof base.convertToViewportPoint !== 'function') return target
-      const { items } = await page.getTextContent()
+      const { items, styles } = await page.getTextContent()
       if (owner !== this.document || this.disposed) return target
       const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const exactRegex = new RegExp(`(?<![A-Za-z0-9_\\u4e00-\\u9fff])${escaped}(?![A-Za-z0-9_\\u4e00-\\u9fff])`, 'gi')
@@ -249,10 +263,14 @@ export class PdfPreview {
         const left = Math.min(vx1!, vx2!), top = Math.min(vy1!, vy2!)
         const width = Math.abs(vx2! - vx1!), height = Math.max(10, Math.abs(vy2! - vy1!))
         if (Math.abs(top - target.y) > 72) continue
+        let edges: ArrayLike<number> | null | undefined
         for (const match of entry.str.matchAll(exactRegex)) {
           const idx = match.index ?? 0
-          const subX = left + (idx / len) * width
-          const subW = Math.max(12, (match[0].length / len) * width)
+          // Measured character positions (counted per code point) when available; equal widths otherwise.
+          if (edges === undefined) edges = this.measure.edges({ str: entry.str, x: left, y: top, width, height, ...runFont(entry, styles) })
+          const first = edges ? [...entry.str.slice(0, idx)].length : 0, last = edges ? first + [...match[0]].length : 0
+          const subX = left + (edges ? edges[first]! : idx / len) * width
+          const subW = Math.max(12, (edges ? edges[last]! - edges[first]! : match[0].length / len) * width)
           const score = Math.abs(top - target.y) * 4 + Math.abs(subX - target.x) * 0.35
           if (!best || score < best.score) {
             best = { score, box: { page: target.page, x: subX, y: top, width: subW, height } }
@@ -275,6 +293,27 @@ export class PdfPreview {
   setDocumentListener(listener: (() => void) | null): void { this.documentListener = listener }
   /** A failing listener is reported but must not turn a loaded preview into a failed one. */
   private documentChanged(): void { try { this.documentListener?.() } catch (error) { if (!this.disposed) this.notify(readableError(error)) } }
+
+  /** Runs each time a page has been painted; by then the fonts that page uses are loaded, so text on it can be
+   * measured exactly. Returns the function that removes the listener.
+   */
+  onPageRendered(listener: (page: number) => void): () => void {
+    this.pageListeners.add(listener)
+    return () => { this.pageListeners.delete(listener) }
+  }
+  private pageRendered(page: number): void {
+    this.measure.fontsChanged()
+    for (const listener of [...this.pageListeners]) {
+      try { listener(page) } catch (error) { this.listenerFailed(error) }
+    }
+  }
+  /** Reported once per document: a listener that keeps failing must not raise a notice on every painted page. */
+  private listenerFailed(error: unknown): void {
+    const message = readableError(error)
+    if (this.disposed || message === this.lastListenerError) return
+    this.lastListenerError = message
+    this.notify(message)
+  }
 
   get pageCount(): number { return this.document ? this.slots.length : 0 }
   /** The page at the top of the visible area (1-based). */
@@ -311,7 +350,7 @@ export class PdfPreview {
       if (typeof page.getTextContent !== 'function') return null
       const base = page.getViewport({ scale: 1 })
       if (typeof base.convertToViewportPoint !== 'function') return null
-      const { items } = await page.getTextContent()
+      const { items, styles } = await page.getTextContent()
       const result: PdfTextItem[] = []
       for (const entry of items) {
         if (result.length >= MAX_TEXT_ITEMS) break
@@ -319,7 +358,7 @@ export class PdfPreview {
         const tx = entry.transform[4]!, ty = entry.transform[5]!, size = Math.max(entry.height || 0, Math.hypot(entry.transform[2]!, entry.transform[3]!), 1)
         const [x1, y1] = base.convertToViewportPoint(tx, ty - size * 0.22), [x2, y2] = base.convertToViewportPoint(tx + (entry.width || 0), ty + size * 0.9)
         if (![x1, y1, x2, y2].every(value => Number.isFinite(value))) continue
-        result.push({ str: entry.str, x: Math.min(x1!, x2!), y: Math.min(y1!, y2!), width: Math.abs(x2! - x1!), height: Math.abs(y2! - y1!) })
+        result.push({ str: entry.str, x: Math.min(x1!, x2!), y: Math.min(y1!, y2!), width: Math.abs(x2! - x1!), height: Math.abs(y2! - y1!), ...runFont(entry, styles) })
       }
       return { width: base.width, height: base.height, items: result }
     } finally { page.cleanup() }
@@ -542,6 +581,7 @@ export class PdfPreview {
       await drawing.task.promise
       if (this.current(owner, slot, version)) {
         slot.rendered = version
+        this.pageRendered(slot.number)
         if (textNode && typeof TextLayer === 'function') {
           const cssViewport = page.getViewport({ scale: slot.width / base.width })
           const textSource = typeof page.streamTextContent === 'function' ? page.streamTextContent() : await page.getTextContent()
@@ -588,6 +628,8 @@ export class PdfPreview {
     const loading = this.loading, drawing = this.drawing
     this.clearHighlight()
     this.texts.clear()
+    this.measure.reset()
+    this.lastListenerError = ''
     this.renderVersion++; this.pending = false
     for (const slot of this.slots) this.release(slot)
     this.loading = null; this.document = null; this.drawing = null; this.work = null; this.slots = []; this.width = 0

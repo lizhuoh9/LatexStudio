@@ -93,12 +93,15 @@ let host: CommentsHost
 let tasks: Promise<void>[]
 let source: string
 let identity: CommentSnapshot['identity']
+/** Character boundaries the fake preview reports for a text run; null while the page's fonts are "not loaded". */
+let measuredEdges: ((text: string) => Float64Array) | null
 const snapshot = (): CommentSnapshot => ({ events: [...events], unreadable: 0, identity })
 async function settle(): Promise<void> { for (let i = 0; i < 30; i++) await Promise.resolve(); await Promise.all(tasks.splice(0)); for (let i = 0; i < 30; i++) await Promise.resolve() }
 const cards = (): NodeMock[] => get('comment-list').children
 
 beforeEach(() => {
   state.nodes.clear(); state.active = null; tasks = []; events = []; identity = { source: 'session', login: 'alice', id: 42 }
+  measuredEdges = null
   source = '\\section{Results}\nOur method shows strong gains over the\nbaseline in every experiment.\n'
   const scroll = new NodeMock(); scroll.className = 'pdf-scroll'; scroll.append(get('pdf-pages'))
   vi.stubGlobal('document', { getElementById: get, createElement: (tag: string) => new NodeMock(tag.toUpperCase()), get activeElement() { return state.active } })
@@ -112,6 +115,7 @@ beforeEach(() => {
     api: api as unknown as CommentApi,
     pdf: { setOverlay: vi.fn(), pageCount: 1, pageSize: vi.fn(async () => ({ width: 600, height: 800 })),
       pageText: vi.fn(async () => ({ width: 600, height: 800, items })), jumpTo: vi.fn(async () => undefined),
+      onPageRendered: vi.fn(() => () => undefined), textEdges: (item: { str: string }) => measuredEdges?.(item.str) ?? null,
       reveal: vi.fn(async () => undefined) } as unknown as CommentsHost['pdf'],
     synctex: vi.fn(() => synctex), project: vi.fn(() => ({ id: 'p', name: 'Paper', root: '/p', files: [], defaultMain: 'main.tex' })),
     readSource: vi.fn(async () => source), revealSource: vi.fn(), notify: vi.fn(),
@@ -142,6 +146,54 @@ describe('comment workflow in the editor', () => {
     const layer = provider(1)
     expect(layer.children.map(node => node.className)).toEqual(['pdf-comment-mark is-open is-active'])
     expect(parseFloat(layer.children[0]!.style.left!)).toBeCloseTo((72 + (17 / 38) * 380) / 6, 3)
+  })
+
+  it('moves a highlight onto its exact characters once its page has been painted and the text can be measured', async () => {
+    // Arrange: the comment is first placed assuming equal character widths.
+    events = [{ v: 1, type: 'thread', id: idOf(1), at: '2026-11-19T10:00:00.000Z', author: alice, anchor, body: 'typo' }]
+    const comments = new CommentsController(host)
+    comments.projectChanged(); await settle()
+    const provider = vi.mocked(host.pdf.setOverlay).mock.calls[0]![0] as unknown as (page: number) => NodeMock
+    const painted = vi.mocked(host.pdf.onPageRendered).mock.calls[0]![0]
+    const left = (): number => parseFloat(provider(1).children[0]!.style.left!)
+    expect(left()).toBeCloseTo((72 + (17 / 38) * 380) / 6, 3)
+
+    // Act: the page is painted; its first 17 characters turn out to take a quarter of the line.
+    measuredEdges = text => Float64Array.from({ length: [...text].length + 1 }, (_, index) => index <= 17 ? index / 68 : 0.25 + (index - 17) * 0.75 / ([...text].length - 17))
+    painted(2)
+    const untouched = left()
+    painted(1)
+
+    // Assert
+    expect(untouched).toBeCloseTo((72 + (17 / 38) * 380) / 6, 3)
+    expect(left()).toBeCloseTo((72 + 0.25 * 380) / 6, 3)
+    expect(provider(1).children.map(node => node.className)).toEqual(['pdf-comment-mark is-open'])
+  })
+
+  it('never paints positions from the previous PDF while a new one is loading or its comments are still being placed', async () => {
+    // Arrange: one highlighted comment on the PDF that is about to be replaced.
+    events = [{ v: 1, type: 'thread', id: idOf(1), at: '2026-11-19T10:00:00.000Z', author: alice, anchor, body: 'typo' }]
+    const comments = new CommentsController(host)
+    comments.projectChanged(); await settle()
+    const provider = vi.mocked(host.pdf.setOverlay).mock.calls[0]![0] as unknown as (page: number) => NodeMock
+    const painted = vi.mocked(host.pdf.onPageRendered).mock.calls[0]![0]
+    expect(provider(1).children).toHaveLength(1)
+
+    // Act: the new PDF starts loading and its first page is painted; measuring the old text would now move it.
+    comments.pdfChanging()
+    measuredEdges = text => Float64Array.from({ length: [...text].length + 1 }, (_, index) => index <= 17 ? index / 68 : 0.25 + (index - 17) * 0.75 / ([...text].length - 17))
+    painted(1)
+    const whileLoading = provider(1).children.length
+    comments.compiled()
+    painted(1)
+    const beforePlaced = provider(1).children.length
+    await settle()
+
+    // Assert: nothing until the comments have been placed on the new PDF, then the measured position.
+    expect(whileLoading).toBe(0)
+    expect(beforePlaced).toBe(0)
+    expect(provider(1).children).toHaveLength(1)
+    expect(parseFloat(provider(1).children[0]!.style.left!)).toBeCloseTo((72 + 0.25 * 380) / 6, 3)
   })
 
   it('keeps a fixed comment only in the list, flashes its text when its card is selected, and reopening brings the red highlight back', async () => {
