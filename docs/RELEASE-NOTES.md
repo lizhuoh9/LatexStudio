@@ -6,13 +6,14 @@
 | :---: | :---: |
 | [**Windows 64 位安装版**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-win-x64-setup.exe) | [**Apple 芯片 Mac 版（DMG）**](https://github.com/lizhuoh9/LatexStudio/releases/download/v{{VERSION}}/LatexStudio-{{VERSION}}-mac-arm64-test.dmg) |
 
-未签名开发版。Mac 版目前仅用于编辑测试，暂不支持本地 TeX 编译，未完成 Apple 公证；只提供 Apple 芯片版，不支持 Intel 芯片的 Mac。
+未签名开发版。Mac 版未完成 Apple 公证；只提供 Apple 芯片版，不支持 Intel 芯片的 Mac。**Mac 版自 0.4.15 起可以本地编译**（pdfLaTeX、XeLaTeX、BibTeX，TeX 随安装包提供，不用另装）。这项功能只在一台 Mac（macOS 27）上实测过：每台 Mac 第一次编译前会自检，自检不通过时只能编辑、不能编译。
 
 **Mac 安装与首次打开**：先在“苹果菜单 → 关于本机”确认芯片是 Apple M 系列。打开下载的 DMG，把 LatexStudio 拖到“应用程序”。因为未经 Apple 公证，第一次双击会被系统拦截：先点“完成”，再打开“系统设置 → 隐私与安全性”，在页面下方找到 LatexStudio 的提示并点“仍要打开”。之后可正常双击打开。
 
 <details>
 <summary>版本说明与开发者资料</summary>
 
+- **Mac 版可以本地编译了**：安装包自带 TinyTeX 和中文宏包，不需要另装 TeX；支持 pdfLaTeX、XeLaTeX（含 ctex 中文）和 BibTeX。TeX 在 macOS 的 App Sandbox 里运行：论文以快照的形式传给它，它读不到你电脑上的其他文件，也不能联网。每台 Mac 第一次编译前会用几秒钟自检隔离是否生效，不生效就不提供编译（仍然可以编辑）。Mac 安装包因此从约 147 MB 增大到约 418 MB。这项功能只在一台 Apple 芯片的 Mac（macOS 27.2）上实测过，其他系统版本靠自检把关；遇到不能编译的情况，请反馈系统版本和界面上的提示。Windows 版的编译方式没有变化。
 - **PDF 里的高亮框更准**：PDF 查找的命中、评论高亮、从源码跳到 PDF 时的词框，原来按“一行里每个字符一样宽”取位置，窄字母（i、l、I）多的行里会偏一个字母以上。现在用 PDF 自带字体逐字符量宽度，并按 TeX 的排法处理行内空格、句末加宽的空格和 fi / ffi 等连字；某一页还没画出来时先用相近字体估算，画出来后自动校正，不会跳转或改变当前选中的一处。（同一台 Windows 电脑上自编的三份两栏样例，每份 46 处命中：框住的字母数不对的由 20–24 处降为 0，边缘最大偏差由约 13 pt 降到 1.3–1.8 pt。）仍有局限：只含位图字体（Type 3）的 PDF 只能估算，可能偏半个到一个字母；字偶间距量不到，个别行仍有约 1 pt 误差。
 - **源码查找重做**：查找条移到源码上方，字号和控件放大；输入时直接跳到光标后最近的一处并显示“第几处 / 共几处”，没有结果时输入框变红；提供区分大小写、全字匹配、正则三个开关，替换行默认收起。修复带反斜杠的命令（如 `\newcommand`、`\textbf`、`\ref`）此前搜不到的问题。点工具栏的查找按钮后，焦点留在查找框里。
 - **新增 PDF 内查找**：PDF 工具栏新增放大镜按钮，在 PDF 页面上点过之后按 `Ctrl / ⌘ + F` 也能打开。所有命中标黄、当前一处标橙，`Enter` / `Shift+Enter` 前后跳转，`Esc` 关闭；重新编译后按原来的词自动重搜。匹配不区分大小写，忽略标点、空格、换行和行尾断词，因此跨行的词也能搜到，但只有符号的查询（如单独一个 `=`）搜不到。只搜页面上的文字，不读取 PDF 里的链接、批注或脚本。

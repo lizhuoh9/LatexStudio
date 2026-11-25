@@ -15,7 +15,12 @@ export interface TexPreparationProgress {
   completed: number
   total: number
 }
-export interface PreparedTex { root: string; manifest: ManagedTexManifest }
+export interface PreparedTex {
+  root: string
+  manifest: ManagedTexManifest
+  /** Engines this runtime may run. Absent means every supported engine (the Windows runtime). */
+  engines?: ReadonlyArray<'pdflatex' | 'xelatex'>
+}
 export interface TexPreparationOptions {
   platform?: NodeJS.Platform
   signal?: AbortSignal

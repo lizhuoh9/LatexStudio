@@ -5,15 +5,18 @@ import type { SyncTexData } from '../../shared/synctex'
 import { checkCanceled, copyProject, createBuild, loadPdf, loadSynctex, monitorBuild, removeBuild } from '../local/build'
 import { decodeText, failure, LIMITS, projectPath, SafeProject } from '../local/paths'
 import { BoundedLog } from '../local/process'
-import { createWindowsSandboxSession, type WindowsSandboxSession, type WindowsSandboxSessionOptions } from '../sandbox/windows'
+import { isConfirmedCancellation, isSessionNotStarted, type SandboxSession, type SandboxSessionFactory,
+  type SandboxSessionOptions } from '../sandbox/session'
 import { bibliographyTool } from './bibliography'
 import { PATCHED_ENGINE_DIR, USABLE_WINDOWS_ENGINES } from './patched-engines'
+import { DARWIN_TOOLS } from './darwin-runtime'
+import { texBackend, type RuntimeSource } from './platform-backend'
 import type { PreparedTex } from './prepare'
-import { trustedRuntimes } from './runtime-cache'
 
 /** Production entry: never imports PATH discovery, direct child_process or the legacy research compiler. */
 export const COMPILE_TIMEOUT_MS = 120_000
 const CANCELED = 'Windows 系统沙箱不可用，已拒绝编译：编译已取消'
+const ENGINE_NOT_ACCEPTED = '所选编译引擎没有通过这台电脑的隔离自检，暂不可用；请改用 pdfLaTeX。'
 const LATCHED = '隔离会话未确认完整清理，本次运行已停用编译；请重新启动 LatexStudio 后再试。'
 const LIMITATION = '隔离编译：应用管理的引擎两遍（XeLaTeX 另经 xdvipdfmx 生成 PDF）；不执行 latexmk、项目脚本或参考文献程序，不联网。\n'
 type Engine = typeof USABLE_WINDOWS_ENGINES[number]
@@ -21,51 +24,57 @@ const LABELS: Record<Engine, string> = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX
 const BIBER_NOTE = '检测到 biblatex 使用 Biber 后端；当前仅支持 BibTeX。请改用 \\usepackage[backend=bibtex]{biblatex} 或 natbib。'
 interface RunContext { prepared: PreparedTex; engine: Engine; source: string; probe: string; main: string }
 
-interface RuntimeSource { get(dataRoot: string, signal?: AbortSignal): Promise<PreparedTex | null> }
 export interface CompilerDependencies {
   platform?: NodeJS.Platform
   runtimes?: RuntimeSource
-  createSession?: (options: WindowsSandboxSessionOptions) => Promise<WindowsSandboxSession>
+  createSession?: SandboxSessionFactory
+  /** Whether this build carries accepted macOS release pins; defaults to the application's own constants. */
+  macAccepted?: boolean
   timeoutMs?: number
   /** Process-wide by default: a residual-risk latch must survive switching projects. */
   latch?: { latched: boolean }
 }
 const processLatch = { latched: false }
+const OUTPUT_FILES = ['paperstudio.pdf', 'paperstudio.synctex.gz'] as const
+const BIBLIOGRAPHY_FILES = ['paperstudio.aux', 'paperstudio.bcf'] as const
+interface Backend { runtimes: RuntimeSource; createSession: SandboxSessionFactory }
+
+/** Injected parts win; the rest comes from the platform's backend. Null means compilation is not enabled here. */
+function backendFor(deps: CompilerDependencies): Backend | null {
+  const backend = texBackend(deps.platform ?? process.platform, deps.macAccepted)
+  return backend && { runtimes: deps.runtimes ?? backend.runtimes, createSession: deps.createSession ?? backend.createSession }
+}
 
 export async function detectTexEnvironment(signal?: AbortSignal, dataRoot?: string,
   deps: CompilerDependencies = {}): Promise<TexEnvironment> {
   signal?.throwIfAborted()
-  if ((deps.platform ?? process.platform) !== 'win32')
-    return { available: false, engines: [], description: '当前系统暂不支持编译。' }
-  const prepared = dataRoot ? await (deps.runtimes ?? trustedRuntimes).get(dataRoot, signal) : null
+  const backend = backendFor(deps)
+  if (!backend) return { available: false, engines: [], description: '当前系统暂不支持编译。' }
+  const prepared = dataRoot ? await backend.runtimes.get(dataRoot, signal) : null
   signal?.throwIfAborted()
   if (!prepared) return { available: false, engines: [], description: '编译组件尚未就绪。' }
-  return { available: true, engines: [...USABLE_WINDOWS_ENGINES],
+  return { available: true, engines: [...(prepared.engines ?? USABLE_WINDOWS_ENGINES)],
     description: '编译组件已就绪。' }
 }
 
 /** A clean cancellation is the only session failure that keeps the compiler usable. */
 function confirmedCancellation(error: unknown): boolean {
-  return error instanceof Error && error.message === CANCELED
+  return isConfirmedCancellation(error) || (error instanceof Error && error.message === CANCELED)
 }
 
-interface Attempt { controller: AbortController; log: BoundedLog; folder?: string; session?: WindowsSandboxSession }
+interface Attempt { controller: AbortController; log: BoundedLog; folder?: string; session?: SandboxSession }
 
 export class LocalCompiler {
   private active: AbortController | undefined
   private disposed = false
   private readonly latch: { latched: boolean }
-  private readonly runtimes: RuntimeSource
-  private readonly createSession: NonNullable<CompilerDependencies['createSession']>
+  private readonly backend: Backend | null
   private readonly timeoutMs: number
-  private readonly platform: NodeJS.Platform
 
   constructor(private readonly root: string, private readonly buildRoot: string, private readonly dataRoot: string,
     private readonly onLog?: (message: string) => void, deps: CompilerDependencies = {}) {
-    this.runtimes = deps.runtimes ?? trustedRuntimes
-    this.createSession = deps.createSession ?? createWindowsSandboxSession
+    this.backend = backendFor(deps)
     this.timeoutMs = deps.timeoutMs ?? COMPILE_TIMEOUT_MS
-    this.platform = deps.platform ?? process.platform
     this.latch = deps.latch ?? processLatch
   }
 
@@ -96,9 +105,11 @@ export class LocalCompiler {
   private async compile(request: CompileRequest, attempt: Attempt): Promise<{ pdf: Uint8Array; synctex: SyncTexData | null }> {
     const { signal } = attempt.controller
     const project = await this.prepare(request)
-    if (this.platform !== 'win32') throw failure('此平台的隔离编译尚未验收，未启用。')
-    const prepared = await this.runtimes.get(this.dataRoot, signal)
+    const backend = this.backend
+    if (!backend) throw failure('此平台的隔离编译尚未验收，未启用。')
+    const prepared = await backend.runtimes.get(this.dataRoot, signal)
     if (!prepared) throw failure('编译组件尚未就绪，请稍候或重试。')
+    if (prepared.engines && !prepared.engines.includes(request.engine as Engine)) throw failure(ENGINE_NOT_ACCEPTED)
     checkCanceled(signal)
     attempt.folder = await createBuild(this.root, this.buildRoot)
     const stopMonitor = monitorBuild(attempt.folder, attempt.controller)
@@ -108,34 +119,40 @@ export class LocalCompiler {
       await mkdir(join(source, '.paperstudio-output'), { mode: 0o700 }); await mkdir(probe, { mode: 0o700 })
       checkCanceled(signal)
       // Re-verify after the (possibly slow) snapshot copy so the pinned engine is checked just before launch.
-      const current = await this.runtimes.get(this.dataRoot, signal)
+      const current = await backend.runtimes.get(this.dataRoot, signal)
       if (!current || current.root !== prepared.root) throw failure('TeX 资源在编译准备期间发生变化，请重试。')
       const run: RunContext = { prepared: current, engine: request.engine as Engine, source, probe, main: request.mainFile }
       attempt.session = await this.openSession(run, attempt)
       await this.passes(attempt.session, run, attempt)
       checkCanceled(signal)
       const output = join(source, '.paperstudio-output')
-      return { pdf: await loadPdf(output), synctex: await loadSynctex(output, source) }
+      // A backend with its own work directory hands the results back first; SyncTeX then names that directory.
+      await attempt.session.pull?.(OUTPUT_FILES)
+      return { pdf: await loadPdf(output), synctex: await loadSynctex(output, attempt.session.remoteRoot ?? source) }
     } finally { await stopMonitor() }
   }
 
-  private openSession(run: RunContext, attempt: Attempt): Promise<WindowsSandboxSession> {
+  private openSession(run: RunContext, attempt: Attempt): Promise<SandboxSession> {
     const { prepared, engine } = run
     const tools = engine === 'xelatex' ? { xdvipdfmx: join(prepared.root, prepared.manifest.tools.xdvipdfmx) } : undefined
     return this.startSession({ executable: join(prepared.root, prepared.manifest.engines[engine]), runtimeRoot: prepared.root,
       ...(tools ? { tools } : {}), workDirs: [run.source, run.probe], signal: attempt.controller.signal, timeoutMs: this.timeoutMs }, attempt)
   }
 
-  /** A failed start may have spawned the helper with unknown cleanup, so only a clean cancellation stays usable. */
-  private async startSession(options: WindowsSandboxSessionOptions, attempt: Attempt): Promise<WindowsSandboxSession> {
-    try { return await this.createSession(options) } catch (error) {
-      if (!confirmedCancellation(error)) this.latchAfter(attempt)
+  /** A failed start may have spawned the helper with unknown cleanup, so only a clean cancellation, or a refusal
+   * made before anything was started, stays usable. */
+  private async startSession(options: SandboxSessionOptions, attempt: Attempt): Promise<SandboxSession> {
+    try {
+      if (!this.backend) throw failure('此平台的隔离编译尚未验收，未启用。')
+      return await this.backend.createSession(options)
+    } catch (error) {
+      if (!confirmedCancellation(error) && !isSessionNotStarted(error)) this.latchAfter(attempt)
       throw error
     }
   }
 
   /** cancel() after an abort, dispose() otherwise; anything but a confirmed clean end latches the compiler. */
-  private async closeSession(session: WindowsSandboxSession, attempt: Attempt): Promise<void> {
+  private async closeSession(session: SandboxSession, attempt: Attempt): Promise<void> {
     try {
       if (attempt.controller.signal.aborted) await session.cancel()
       else await session.dispose()
@@ -149,7 +166,7 @@ export class LocalCompiler {
   }
 
   /** Pass 1, then BibTeX when the run cites a \bibliography, then the remaining passes (2 without, 3 with BibTeX). */
-  private async passes(session: WindowsSandboxSession, run: RunContext, attempt: Attempt): Promise<void> {
+  private async passes(session: SandboxSession, run: RunContext, attempt: Attempt): Promise<void> {
     const { engine, source } = run
     // The format is passed by NAME: kpathsea resolves it to the pinned runtime's file (re-hashed by the trust cache,
     // see RUNTIME_FORMATS in runtime-cache.ts), and project snapshots never contain .fmt files. An absolute path argument would break
@@ -167,31 +184,44 @@ export class LocalCompiler {
         attempt.log.push(Buffer.from(`\n${LABELS[engine]} 进程退出码：${result.code}\n`))
         throw failure('TeX 编译失败，请查看日志。')
       }
-      if (pass === 1 && await this.bibliography(run, attempt, record)) total = 3
+      if (pass === 1 && await this.bibliography(session, run, attempt, record)) total = 3
     }
     if (engine === 'xelatex') await this.convert(session, source, attempt, record)
   }
 
   /** Returns true when BibTeX ran. Its warnings/errors are logged but do not abort: LaTeX still produces a PDF. */
-  private async bibliography(run: RunContext, attempt: Attempt, record: (bytes: Buffer) => void): Promise<boolean> {
+  private async bibliography(engineSession: SandboxSession, run: RunContext, attempt: Attempt,
+    record: (bytes: Buffer) => void): Promise<boolean> {
+    await engineSession.pull?.(BIBLIOGRAPHY_FILES)
     const tool = await bibliographyTool(join(run.source, '.paperstudio-output'))
     if (tool === 'biber') attempt.log.push(Buffer.from(`\n${BIBER_NOTE}\n`))
     if (tool !== 'bibtex') return false
     checkCanceled(attempt.controller.signal)
     attempt.log.push(Buffer.from('\nBibTeX：处理参考文献\n'))
-    const executable = join(run.prepared.root, 'install', ...PATCHED_ENGINE_DIR.split('/'), 'bibtex.exe')
+    const bibtexArgs = ['-terse', './.paperstudio-output/paperstudio']
+    if (engineSession.runsBibtex) {
+      // Same session: that backend binds its own pinned BibTeX and runs it INSIDE the output folder, because on Unix
+      // kpathsea's paranoid mode refuses to write under a dot-directory named on the command line.
+      this.reportBibtex(await engineSession.run(['-terse', 'paperstudio'], run.source, { tool: 'bibtex', onStdout: record, onStderr: record }), attempt)
+      return true
+    }
+    const executable = run.prepared.manifest.platform === 'darwin' ? join(run.prepared.root, ...DARWIN_TOOLS.bibtex.split('/'))
+      : join(run.prepared.root, 'install', ...PATCHED_ENGINE_DIR.split('/'), 'bibtex.exe')
     const session = await this.startSession({ executable, runtimeRoot: run.prepared.root, workDirs: [run.source, run.probe],
       signal: attempt.controller.signal, timeoutMs: this.timeoutMs }, attempt)
     try {
-      const result = await session.run(['-terse', './.paperstudio-output/paperstudio'], run.source, { onStdout: record, onStderr: record })
-      if (result.code >= 2) attempt.log.push(Buffer.from(`\nBibTeX 报告错误（退出码 ${result.code}），参考文献可能不完整，请查看上方日志。\n`))
+      this.reportBibtex(await session.run(bibtexArgs, run.source, { onStdout: record, onStderr: record }), attempt)
     } finally { await this.closeSession(session, attempt) }
     if (this.latch.latched) throw failure('隔离会话清理未确认，已停止编译。')
     return true
   }
 
+  private reportBibtex(result: { code: number }, attempt: Attempt): void {
+    if (result.code >= 2) attempt.log.push(Buffer.from(`\nBibTeX 报告错误（退出码 ${result.code}），参考文献可能不完整，请查看上方日志。\n`))
+  }
+
   /** XeLaTeX writes .xdv; the session's bound, pinned xdvipdfmx turns it into the fixed output PDF. */
-  private async convert(session: WindowsSandboxSession, source: string, attempt: Attempt,
+  private async convert(session: SandboxSession, source: string, attempt: Attempt,
     record: (bytes: Buffer) => void): Promise<void> {
     checkCanceled(attempt.controller.signal)
     attempt.log.push(Buffer.from('\nxdvipdfmx：生成 PDF\n'))

@@ -6,7 +6,7 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: state.build, setApplicat
 vi.mock('../src/main/tex/prepare', () => ({ findPreparedTex: state.find, prepareNativeTex: state.prepare }))
 vi.mock('../src/main/tex/bundled-runtime', () => ({ findBundledTexArchive: state.bundle }))
 import { installWorkspaceMenu } from '../src/main/workspace/menu'
-import { TexSetupController } from '../src/main/tex/controller'
+import { TexSetupController, texSetupBackend } from '../src/main/tex/controller'
 import { setLocale, translate } from '../src/shared/i18n'
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
@@ -51,10 +51,10 @@ describe('macOS editing contracts (not a real Mac execution test)', () => {
     Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
     installWorkspaceMenu(); expect(state.build).toHaveBeenCalledOnce()
   })
-  it.each(['darwin', 'linux'] as const)('never prepares or trusts a Windows TeX runtime on %s', async value => {
+  it.each(['darwin', 'linux'] as const)('never prepares or trusts a Windows TeX runtime on %s when no Mac backend is accepted', async value => {
     Object.defineProperty(process, 'platform', { ...platform, value })
     const send = vi.fn(), window = { isDestroyed: () => false, webContents: { send } } as unknown as BrowserWindow
-    const controller = new TexSetupController(window, 'file:///workspace.html', '/fixture', { get: state.find }, state.prepare)
+    const controller = new TexSetupController(window, 'file:///workspace.html', '/fixture', { get: state.find }, state.prepare, texSetupBackend(value, false))
     for (const result of [await controller.status(), await controller.initialize(), await controller.prepare(), await controller.cancelAndWait()]) {
       expect(result).toMatchObject({ supported: false, compileVerified: false, phase: 'required' })
       expect(result.message).toContain('仍可新建、打开、编辑和保存论文')

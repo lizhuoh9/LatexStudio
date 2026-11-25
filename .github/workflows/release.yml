@@ -39,7 +39,7 @@ jobs:
         name: Windows fixed offline resources and unsigned NSIS/portable
         run: npm run dist:win -- --publish never
       - if: runner.os == 'macOS'
-        name: Apple Silicon Mac editing test DMG (ad-hoc, no notarization or TeX)
+        name: Apple Silicon Mac test DMG (ad-hoc, no notarization; stages TinyTeX when the source carries the Mac pins)
         run: npm run dist:mac:test
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

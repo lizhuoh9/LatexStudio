@@ -4,9 +4,12 @@ import { isTrustedSettingsSender } from '../url-policy'
 import { prepareNativeTex, type PreparedTex, type TexPreparationProgress } from './prepare'
 import { trustedRuntimes } from './runtime-cache'
 import { findBundledTexArchive } from './bundled-runtime'
+import { macCompileAccepted, macTrustedRuntimes } from './darwin-runtime'
 
 const PREPARED = '编译组件已就绪。'
 const CHECKING = '正在后台验证已有编译组件；可先编辑和保存论文。'
+const UNSUPPORTED = '此平台尚未启用本地编译；仍可新建、打开、编辑和保存论文。'
+const FAILED = '编译组件配置失败，请检查磁盘空间或修复安装后重试。'
 interface RuntimeDetection { state: TexSetupState; runtime: PreparedTex | null; checked: boolean }
 interface RuntimeSource { get(dataRoot: string, signal?: AbortSignal): Promise<PreparedTex | null> }
 interface PreparationOptions { signal: AbortSignal; onProgress: (state: TexPreparationProgress) => void }
@@ -16,10 +19,26 @@ const prepareBundledTex: Preparation = async (dataRoot, options) => {
   options.signal.throwIfAborted()
   return prepareNativeTex(dataRoot, { ...options, archivePath })
 }
+/** Per-platform resources for the setup panel. macOS joins only once its release pins exist (darwin-runtime.ts). */
+export interface TexSetupBackend {
+  supported: boolean
+  runtimes: RuntimeSource
+  preparation: Preparation
+  /** The reason of the last refused check, shown instead of the generic failure text. */
+  failure?: () => string | null
+}
+export function texSetupBackend(platform: NodeJS.Platform = process.platform, macAccepted: boolean = macCompileAccepted()): TexSetupBackend {
+  if (platform === 'darwin' && macAccepted) return { supported: true, runtimes: macTrustedRuntimes,
+    // Nothing is unpacked on macOS: "preparing" is the bundled-resource check plus the isolation self-test.
+    preparation: (dataRoot, options) => macTrustedRuntimes.verify(dataRoot, options.signal),
+    failure: () => macTrustedRuntimes.failure }
+  return { supported: platform === 'win32', runtimes: trustedRuntimes, preparation: prepareBundledTex }
+}
 export class TexSetupController {
-  private state: TexSetupState = { phase: process.platform === 'win32' ? 'checking' : 'required',
-    message: process.platform === 'win32' ? CHECKING : '此平台尚未启用本地编译；仍可新建、打开、编辑和保存论文。',
-    completed: 0, total: 0, supported: process.platform === 'win32', compileVerified: false }
+  private state: TexSetupState
+  private readonly runtimes: RuntimeSource
+  private readonly preparation: Preparation
+  private readonly failure: (() => string | null) | undefined
   private task: Promise<TexSetupState> | null = null
   private detection: Promise<RuntimeDetection> | null = null
   private abort: AbortController | null = null
@@ -27,7 +46,13 @@ export class TexSetupController {
   private closing = false
   /** `runtimes` is the same trust check the compiler uses, so "prepared" here means the compile gate accepts it. */
   constructor(private readonly window: BrowserWindow, private readonly url: string, private readonly dataRoot: string,
-    private readonly runtimes: RuntimeSource = trustedRuntimes, private readonly preparation: Preparation = prepareBundledTex) {}
+    runtimes?: RuntimeSource, preparation?: Preparation, backend: TexSetupBackend = texSetupBackend()) {
+    this.runtimes = runtimes ?? backend.runtimes
+    this.preparation = preparation ?? backend.preparation
+    this.failure = backend.failure
+    this.state = { phase: backend.supported ? 'checking' : 'required', message: backend.supported ? CHECKING : UNSUPPORTED,
+      completed: 0, total: 0, supported: backend.supported, compileVerified: false }
+  }
 
   /** Main-only startup: local bundled files only; never asks users to choose or download a runtime. */
   initialize(): Promise<TexSetupState> {
@@ -67,8 +92,7 @@ export class TexSetupController {
     return this.detection.then(result => result.state)
   }
   private async detect(signal: AbortSignal): Promise<RuntimeDetection> {
-    if (!this.state.supported) return { state: this.update({ phase: 'required',
-      message: '此平台尚未启用本地编译；仍可新建、打开、编辑和保存论文。' }), runtime: null, checked: false }
+    if (!this.state.supported) return { state: this.update({ phase: 'required', message: UNSUPPORTED }), runtime: null, checked: false }
     const wasPrepared = this.state.phase === 'prepared'
     this.update({ phase: 'checking', message: CHECKING, completed: 0, total: 0 })
     try {
@@ -120,7 +144,7 @@ export class TexSetupController {
       return this.update({ phase: 'prepared', message: PREPARED, completed: 1, total: 1 })
     } catch {
       return this.update({ phase: abort.signal.aborted ? 'required' : 'error', completed: 0, total: 0,
-        message: abort.signal.aborted ? '编译组件配置已暂停。' : '编译组件配置失败，请检查磁盘空间或修复安装后重试。' })
+        message: abort.signal.aborted ? '编译组件配置已暂停。' : this.failure?.() ?? FAILED })
     }
   }
   private progress(state: TexPreparationProgress): void {

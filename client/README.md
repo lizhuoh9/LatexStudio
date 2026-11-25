@@ -1,4 +1,4 @@
-# LatexStudio 0.4.14 客户端
+# LatexStudio 0.4.15 客户端
 
 普通用户通过桌面 LatexStudio 快捷方式或已安装的应用启动；界面语言可在右上角账号菜单的“语言”中选择简体中文、English 或 한국어，切换即时生效并保留到下次启动。无需运行下面的开发命令。语言范围与数据保护见[界面语言说明](<../docs/INTERFACE-LANGUAGES.md>)。首次启动在后台用内置资源自动离线配置、校验；期间可编辑保存，不弹出下载或组件选择。
 
@@ -19,8 +19,8 @@ npm start
 
 - `npm run prepare:tex-runtime`：构建者获取／校验固定 Windows 组件；不是普通用户步骤。脚本与固定资源映射见[当前 package](<package.json>)。
 - `npm run dist:win`：先校验内置组件，再构建 NSIS 与 portable；当前未配置受信签名。
-- `npm run dist:mac:test`：仅在真实 Mac 上检查并生成当前原生架构的 ad-hoc 编辑测试 DMG（不再生成应用 ZIP），输出 `release/macos-test`；发布流水线的构建机是 Apple 芯片，发布页只提供 Apple 芯片 DMG，不提供 Intel 版；不发布、不配置 TeX、不等于正式签名／公证。
-- `npm run test:mac-contracts`：可在 Windows 运行的 Mac 菜单、编译禁用、打包配置和编辑契约测试，不冒充真实 Mac 验收。Mac 交接见[操作说明](<../Mac测试说明.md>)与[双击构建入口](<../在Mac上构建测试版.command>)。
+- `npm run dist:mac:test`：仅在真实 Mac 上检查并生成当前原生架构的 ad-hoc 编辑测试 DMG（不再生成应用 ZIP），输出 `release/macos-test`；发布流水线的构建机是 Apple 芯片，发布页只提供 Apple 芯片 DMG，不提供 Intel 版；源码带 Mac 校验值时会自动下载并暂存固定版本的 TinyTeX（约 210 MB），并用已签好的文件拼出编译助手（不重新签名）；不发布，不等于正式签名／公证。
+- `npm run test:mac-contracts`：可在 Windows 运行的 Mac 菜单、编译开关、打包配置和编辑契约测试，不冒充真实 Mac 验收。Mac 交接见[操作说明](<../Mac测试说明.md>)与[双击构建入口](<../在Mac上构建测试版.command>)。
 - `npm run test:offline-native`：显式原生验收，需要 `PAPERSTUDIO_OFFLINE_NATIVE=1`；使用独立空配置、禁网、真实 Main／AppContainer／PDF／BibTeX／中文，不在默认测试或构建中偷偷启用。
 - `npm run test:versions-ui`：真实构建的保存／差异／单文件回退验证。
 - `npm run test:cloud-ui`：源码 Main＋built UI＋严格合成 HTTP；不是实际 GitHub 账号验收。
@@ -43,6 +43,6 @@ npm start
 
 0.4.7 起登录改用 OAuth App 设备登录（`repo` 权限，公共 Client ID 见 `github-app.public.ts`）：令牌无到期时间也无刷新令牌，仅 Main 使用、OS 加密保存，每 8 小时窗口结束前和每次启动恢复时重新核对账号，401 或账号不一致即结束登录；该路径由隔离测试覆盖，尚无真实账号的长时间保持验收。以下为 0.4.6 及之前 GitHub App 路线的记录：GitHub App 的公共标识已接入；已真实验证 Windows 同账号的私有建库／关联／两目录交替同步，不冒充第二个人邀请或同时冲突验收。0.3.8 自动轮换设备流程的 access／refresh 配对，仅 Main 使用、OS 加密保留、恢复与续期后重新验证身份；安全存储不可用只留内存。退出清除本机登录，撤销／续期授权失效仍须重新登录；旧记录升级后显式登录一次。定时跨期／断网恢复／Logout 与关闭轮换以隔离测试验证，不冒充已等待真实八小时的 GitHub 续期验收。每项目关联独立，创建固定私有且必须明确同步；链接不授权，本地日志不自动上传，不强推。
 
-Windows 使用固定资源与 AppContainer，不执行系统 TeX、项目脚本或 shell escape；清理未确认锁死本进程编译。macOS、Biber、LuaLaTeX、受信签名／公证和原样新版安装验收未开放或未完成。已有沙箱残留禁令仍以[开发约束](<../CLAUDE.md>)及[helper 说明](<resources/win32/README.md>)为准。
+Windows 使用固定资源与 AppContainer，不执行系统 TeX、项目脚本或 shell escape；清理未确认锁死本进程编译。macOS 自 0.4.15 起由 App Sandbox 里的编译助手编译（见 `resources/darwin/README.md`，只在一台 Mac 上实测过）。Biber、LuaLaTeX、受信签名／公证和原样新版安装验收未开放或未完成。已有沙箱残留禁令仍以[开发约束](<../CLAUDE.md>)及[helper 说明](<resources/win32/README.md>)为准。
 
 [使用](<../docs/GITHUB-WORKFLOW.md>) · [配置 App](<../docs/GITHUB-APP-SETUP.md>) · [恢复](<../docs/PROJECT-HISTORY.md>) · [发布](<../docs/RELEASE-ACCEPTANCE.md>) · [第三方](<THIRD_PARTY_NOTICES.md>)

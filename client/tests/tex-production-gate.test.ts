@@ -57,10 +57,10 @@ describe('environment detection', () => {
     expect(await detectTexEnvironment(undefined, 'C:\\data', { platform: 'win32', runtimes: { get } as never }))
       .toMatchObject({ available: true, engines: ['pdflatex', 'xelatex'] })
   })
-  it('stays unavailable without a runtime, off Windows, and does no lookup after cancellation', async () => {
+  it('stays unavailable without a runtime, on a platform with no accepted backend, and does no lookup after cancellation', async () => {
     const get = vi.fn(async () => null)
     expect(await detectTexEnvironment(undefined, 'C:\\data', { platform: 'win32', runtimes: { get } })).toMatchObject({ available: false, engines: [] })
-    expect(await detectTexEnvironment(undefined, '/data', { platform: 'darwin', runtimes: { get } })).toMatchObject({ available: false })
+    expect(await detectTexEnvironment(undefined, '/data', { platform: 'darwin', macAccepted: false, runtimes: { get } })).toMatchObject({ available: false })
     await expect(detectTexEnvironment(AbortSignal.abort(), 'C:\\data', { platform: 'win32', runtimes: { get } })).rejects.toThrow()
     expect(get).toHaveBeenCalledTimes(1)
   })

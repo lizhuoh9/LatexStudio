@@ -1,0 +1,18 @@
+{
+  "what": "LatexStudioCompiler.app pieces signed once on a Mac; every build re-assembles the bundle from them (compiler/assemble.sh) without compiling or signing.",
+  "builtOn": "2026-11-25, Mac mini (Apple silicon), macOS 27.2.1 (26B131)",
+  "toolchain": "Apple clang version 21.0.0 (clang-2100.4.1.1), macOS SDK 27.2, Xcode Command Line Tools",
+  "command": "node scripts/prepare-bundled-tex-darwin.cjs && sh resources/darwin/compiler/build.sh && sh resources/darwin/compiler/export-signed.sh",
+  "signature": "ad-hoc, hardened runtime, entitlement com.apple.security.app-sandbox only",
+  "cdhash": "d16be7bfa6c23fd41e689fd0f4579f1b2991f524",
+  "sources": {
+    "compiler/latexstudio-compiler.c": "10316608e7bd38ab1ab253678e780806ade0a3ee438812ecc4ce6d0089a0965d",
+    "compiler/Info.plist": "81d8789f9397edbf0e797a554e3705e0a022588dfc9d700e4ac096e0049e2cd9",
+    "compiler/compiler.entitlements.plist": "46db84bf46218f3cc65bc5e5daaf5c900028b537c64718bb5738b6392d2e31fc"
+  },
+  "signed": {
+    "latexstudio-compiler": "91d1e7af4d546d6514f3f354adecb470f3d3be6482abdd907cbd2672a59566b0",
+    "CodeResources.gz": "035bb3adc93971a1cbb0f01aacf273377ad37abb6a1d673c9e3edd8ad5a49b94"
+  },
+  "acceptance": "scripts/mac-phase0.sh on the same Mac: 13 acceptance tests passed; see docs/MACOS-COMPILE-PLAN.md sections 11 and 12"
+}
