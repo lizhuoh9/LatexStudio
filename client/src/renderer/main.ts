@@ -97,7 +97,7 @@ class Workbench {
     },
       () => this.run('保存文件', async () => { await this.documents.save() }),
       location => { void this.jumpToPdf(location) })
-    this.outline = new FileOutline(element('file-outline'), line => this.editor.revealLine(line))
+    this.outline = new FileOutline(element('file-outline'), line => { this.layout.showSource(); this.editor.revealLine(line) })
     this.layout = new WorkbenchLayout(() => this.showHome())
     this.splitter = new WorkspaceSplitter()
     this.pdf = new PdfPreview((message) => this.notify(message), location => { void this.jumpToSource(location) })
@@ -259,7 +259,7 @@ class Workbench {
     button('project-open', () => this.run('打开本地项目', () => this.switchProject('open'), true))
     button('project-create', () => this.run('创建本地项目', () => this.switchProject('create'), true))
     button('file-save', () => this.run('保存文件', async () => { await this.documents.save() }))
-    button('file-create', () => this.run('新建文件', () => this.documents.create()))
+    button('file-create', () => this.run('新建文件', async () => { await this.documents.create(); this.layout.showSource() }))
     button('file-reload', () => this.run('重新载入', () => this.documents.reload()))
     button('file-copy', () => this.run('另存副本', () => this.documents.create(true)))
     button('compile', () => this.run('本机编译', () => this.compile()))
@@ -380,6 +380,7 @@ class Workbench {
     this.pdfReady = false
     await adoptCommittedProject(project, () => this.pdf.clear(), next => this.documents.adopt(next), message => this.notify(message))
     this.comments.projectChanged()
+    this.layout.showSource() // A newly opened paper starts with its source in view.
     this.showEditor()
     void this.library.refresh()
     text('log', `已打开本地项目：${project.name}\n`)
@@ -416,6 +417,7 @@ class Workbench {
     text('save-state', buffer.path ? (buffer.dirty ? '● 未保存' : '已保存到本地') : '未打开文件')
     element('save-state').classList.toggle('dirty', buffer.dirty)
     element('external-warning').hidden = !buffer.conflict
+    if (buffer.conflict) this.layout.showSource() // The warning and its recovery buttons live in the source pane.
     text('external-message', this.reloadAvailable() ? '文件在外部发生变化。编辑内容已保留，请比较后重新载入或另存副本。'
       : `“${buffer.path}”原位置已不存在或被替换。编辑内容已保留，请另存副本，或从文件树打开新位置。`)
     element('editor-empty').hidden = Boolean(buffer.path)
@@ -424,7 +426,7 @@ class Workbench {
 
   private renderFiles(files: ProjectFile[], active: string): void {
     const projectId = this.documents.project?.id ?? ''
-    renderFiles(files, active, (path) => this.run('打开文件', () => this.documents.open(path)), projectId)
+    renderFiles(files, active, (path) => this.run('打开文件', async () => { await this.documents.open(path); this.layout.showSource() }), projectId)
     const select = element<HTMLSelectElement>('main-file')
     const texFiles = files.filter((file) => file.kind === 'text' && /\.tex$/i.test(file.path))
     const key = `${projectId}\0${texFiles.map((file) => file.path).join('\0')}`
@@ -502,7 +504,7 @@ class Workbench {
       if (this.busy) { this.notify('正在处理上一项操作，请稍候。'); return }
       await this.execute('跳转源文件', () => this.documents.open(file), false)
     }
-    if (this.documents.buffer.path === file) this.editor.revealLine(line, word)
+    if (this.documents.buffer.path === file) { this.layout.showSource(); this.editor.revealLine(line, word) }
   }
 
   private bindClosingInput(): void {

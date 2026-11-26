@@ -78,6 +78,11 @@ body[data-ui-theme="overleaf"] .workspace:has(.preview-panel[hidden]) { grid-tem
 body[data-ui-theme="overleaf"] .workspace:has(.preview-panel[hidden]):has(#revision-panel:not([hidden])) { grid-template-columns: var(--file-tree-width) minmax(200px,1fr) 300px; grid-template-areas: "files source history" "files logs history"; }
 body[data-ui-theme="overleaf"] .workspace:has(.files-panel[hidden]):has(.preview-panel[hidden]) { grid-template-columns: minmax(200px,1fr); grid-template-areas: "source" "logs"; }
 body[data-ui-theme="overleaf"] .workspace:has(.files-panel[hidden]):has(.preview-panel[hidden]):has(#revision-panel:not([hidden])) { grid-template-columns: minmax(200px,1fr) 300px; grid-template-areas: "source history" "logs history"; }
+/* Collapsed source: its track stays in the template at zero width so the area names keep working. */
+body[data-ui-theme="overleaf"] .workspace:has(.editor-panel[hidden]) { grid-template-columns: var(--file-tree-width) 0 minmax(200px,1fr); }
+body[data-ui-theme="overleaf"] .workspace:has(.editor-panel[hidden]):has(#revision-panel:not([hidden])) { grid-template-columns: var(--file-tree-width) 0 minmax(200px,1fr) 300px; }
+body[data-ui-theme="overleaf"] .workspace:has(.files-panel[hidden]):has(.editor-panel[hidden]) { grid-template-columns: 0 minmax(200px,1fr); }
+body[data-ui-theme="overleaf"] .workspace:has(.files-panel[hidden]):has(.editor-panel[hidden]):has(#revision-panel:not([hidden])) { grid-template-columns: 0 minmax(200px,1fr) 300px; }
 body[data-ui-theme="overleaf"] .files-panel { grid-area: files; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(180px,1.35fr) minmax(120px,1fr); background: var(--panel-bg); border-right: 1px solid var(--frame-border); color: var(--nav-text); }
 body[data-ui-theme="overleaf"] .paper-contents { min-height: 0; background: var(--panel-bg); color: var(--nav-text); overflow: hidden; }
 body[data-ui-theme="overleaf"] .files-panel .panel-heading { min-height: 36px; background: var(--panel-bg); border-color: var(--frame-border); color: var(--nav-text); padding-inline: 12px; }
@@ -106,6 +111,19 @@ body[data-ui-theme="overleaf"] .editor-panel { grid-area: source; position: rela
 #source-preview-splitter { position: absolute; inset: 0 -2px 0 auto; width: 6px; z-index: 20; cursor: col-resize; touch-action: none; background: transparent; transition: background-color 140ms ease; }
 #source-preview-splitter:is(:hover, :focus-visible, .is-dragging) { background: #4d6bfe; outline: none; }
 .workspace:has(.preview-panel[hidden]) #source-preview-splitter { display: none; }
+/* Collapse buttons ride on the divider; with one pane collapsed the remaining button waits at that edge. */
+.pane-collapse { grid-area: preview; justify-self: start; align-self: center; z-index: 22; display: grid; gap: 1px; padding: 2px; transform: translateX(-50%); background: #fff; border: 1px solid #cbd3e2; border-radius: 9px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); opacity: .88; transition: opacity var(--motion-fast) var(--ease-spring), box-shadow var(--motion-fast) var(--ease-spring); }
+.pane-collapse:is(:hover, :focus-within) { opacity: 1; box-shadow: 0 3px 10px rgba(15, 23, 42, 0.16); }
+.workspace:has(.preview-panel[hidden]) .pane-collapse { grid-area: source; justify-self: end; transform: none; margin-right: 4px; }
+.workspace:has(.editor-panel[hidden]) .pane-collapse { transform: none; margin-left: 4px; }
+body[data-history="open"] .pane-collapse { display: none; }
+.pane-collapse button { display: grid; place-items: center; width: 16px; height: 28px; min-width: 0; min-height: 0; padding: 0; background: transparent; color: #4b5870; border-radius: 6px; box-shadow: none; }
+.pane-collapse button:hover:not(:disabled) { background: #eef2ff; color: #2a44c4; }
+.pane-collapse button:focus-visible { outline: 2px solid #3b58eb; outline-offset: 1px; }
+.pane-collapse button::before { content: ''; display: block; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; }
+/* The arrow points the way the divider will move: left closes the source or reopens the PDF. */
+#pane-collapse-source[aria-expanded="true"]::before, #pane-collapse-preview[aria-expanded="false"]::before { transform: translateX(1.5px) rotate(135deg); }
+#pane-collapse-source[aria-expanded="false"]::before, #pane-collapse-preview[aria-expanded="true"]::before { transform: translateX(-1.5px) rotate(-45deg); }
 body[data-ui-theme="overleaf"] .editor-tabs { min-height: 36px; background: var(--nav-bg); color: var(--nav-text); padding: 4px 10px 0; border: 0; border-bottom: 1px solid var(--frame-border); }
 body[data-ui-theme="overleaf"] .editor-tabs h2 { background: #ffffff; color: var(--nav-text); height: 32px; flex: 0 1 auto; max-width: 56%; padding: 0 12px; border-radius: 9px 9px 0 0; border: 1px solid var(--frame-border); border-bottom: 0; font-size: 12px; }
 body[data-ui-theme="overleaf"] #save-state { color: var(--nav-muted); font-size: 11px; }

@@ -16,7 +16,7 @@ import { WorkbenchLayout } from '../src/renderer/workbench-layout'
 let layout: WorkbenchLayout, home: Mock<() => void>, body: { dataset: Record<string, string> }
 const get = (id: string): Node => nodes.get(id)!
 beforeEach(() => {
-  nodes.clear(); for (const id of ['home-open', 'dashboard-all', 'layout-files', 'layout-preview', 'log-toggle', 'log-open', 'log-close', 'log-panel', 'layout-menu', 'project-home', 'editor-workspace', 'files', 'preview']) nodes.set(id, new Node())
+  nodes.clear(); for (const id of ['home-open', 'dashboard-all', 'layout-files', 'layout-source', 'layout-preview', 'pane-collapse-source', 'pane-collapse-preview', 'editor-panel', 'log-toggle', 'log-open', 'log-close', 'log-panel', 'layout-menu', 'project-home', 'editor-workspace', 'files', 'preview']) nodes.set(id, new Node())
   body = { dataset: {} }; home = vi.fn<() => void>()
   vi.stubGlobal('document', { body, querySelector: (selector: string) => nodes.get(selector === '.files-panel' ? 'files' : 'preview') })
   layout = new WorkbenchLayout(home)
@@ -35,6 +35,54 @@ describe('Overleaf view navigation does not own or reset project buffers', () =>
     expect(get('layout-files').attributes.get('aria-pressed')).toBe('false')
     get('layout-files').click(); expect(get('files').hidden).toBe(false)
     get('layout-preview').click(); expect(get('preview').hidden).toBe(true)
+  })
+  it('starts with source and PDF both shown and both collapse controls offered', () => {
+    expect(get('editor-panel').hidden).toBe(false); expect(get('preview').hidden).toBe(false)
+    for (const id of ['layout-source', 'layout-preview']) expect(get(id).attributes.get('aria-pressed')).toBe('true')
+    for (const id of ['pane-collapse-source', 'pane-collapse-preview']) {
+      expect(get(id).attributes.get('aria-expanded')).toBe('true'); expect(get(id).hidden).toBe(false)
+    }
+  })
+  it('collapses the source from the layout menu and restores it with the same control', () => {
+    get('layout-source').click()
+    expect(get('editor-panel').hidden).toBe(true); expect(get('preview').hidden).toBe(false); expect(get('files').hidden).toBe(false)
+    expect(get('layout-source').attributes.get('aria-pressed')).toBe('false')
+    get('layout-source').click(); expect(get('editor-panel').hidden).toBe(false)
+    expect(get('layout-source').attributes.get('aria-pressed')).toBe('true')
+  })
+  it('collapses either pane from the divider and leaves only the control that brings it back', () => {
+    get('pane-collapse-source').click()
+    expect(get('editor-panel').hidden).toBe(true); expect(get('preview').hidden).toBe(false)
+    expect(get('pane-collapse-source').attributes.get('aria-expanded')).toBe('false')
+    expect(get('pane-collapse-source').hidden).toBe(false); expect(get('pane-collapse-preview').hidden).toBe(true)
+    get('pane-collapse-source').click()
+    expect(get('editor-panel').hidden).toBe(false); expect(get('pane-collapse-preview').hidden).toBe(false)
+    get('pane-collapse-preview').click()
+    expect(get('preview').hidden).toBe(true); expect(get('editor-panel').hidden).toBe(false)
+    expect(get('pane-collapse-preview').attributes.get('aria-expanded')).toBe('false')
+    expect(get('pane-collapse-preview').hidden).toBe(false); expect(get('pane-collapse-source').hidden).toBe(true)
+    expect(get('layout-preview').attributes.get('aria-pressed')).toBe('false')
+    get('pane-collapse-preview').click(); expect(get('preview').hidden).toBe(false)
+  })
+  it('never leaves source and PDF both collapsed: collapsing the last one brings the other back', () => {
+    get('layout-preview').click(); get('layout-source').click()
+    expect(get('editor-panel').hidden).toBe(true); expect(get('preview').hidden).toBe(false)
+    expect(get('layout-preview').attributes.get('aria-pressed')).toBe('true')
+    get('layout-preview').click()
+    expect(get('preview').hidden).toBe(true); expect(get('editor-panel').hidden).toBe(false)
+    expect(get('layout-source').attributes.get('aria-pressed')).toBe('true')
+  })
+  it('brings a collapsed source back on request without touching the PDF or an already visible source', () => {
+    layout.showSource(); expect(get('editor-panel').hidden).toBe(false); expect(get('preview').hidden).toBe(false)
+    get('layout-source').click(); layout.showSource()
+    expect(get('editor-panel').hidden).toBe(false); expect(get('preview').hidden).toBe(false)
+    expect(get('pane-collapse-source').attributes.get('aria-expanded')).toBe('true')
+    get('layout-preview').click(); layout.showSource(); expect(get('preview').hidden).toBe(true)
+  })
+  it('keeps a collapsed source collapsed while closing or after disposal', () => {
+    get('layout-source').click(); layout.setClosing(true); layout.showSource(); get('pane-collapse-source').click()
+    expect(get('editor-panel').hidden).toBe(true)
+    layout.setClosing(false); layout.dispose(); layout.showSource(); expect(get('editor-panel').hidden).toBe(true)
   })
   it('shows compilation logs only on explicit action or error notification', () => {
     layout.showLog(false); expect(get('log-panel').hidden).toBe(true)
